@@ -19,6 +19,7 @@ public class AppBody {
         catch (IOException e) {
             e.printStackTrace();
         }
+        cleanUp(outputPath);
     }
 
 
@@ -107,6 +108,13 @@ public class AppBody {
                 }
             }
         }
+    }
+
+    private void cleanUp(File directory){
+        for (File f : directory.listFiles()) {
+            f.delete();
+        }
+        directory.delete();
     }
 
     private void downloadUrlAsFile(final String urlToDownload, File outputPath, String filename) {
