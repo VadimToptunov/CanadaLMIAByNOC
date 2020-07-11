@@ -5,6 +5,7 @@ import static io.restassured.RestAssured.*;
 
 import java.io.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class AppBody {
@@ -89,12 +90,12 @@ public class AppBody {
         log.info(String.format("%s is created.", outputFileName));
 
         for (File csvFile : directory.listFiles()) {
-            if(csvFile.isFile()){
+            if (csvFile.isFile()) {
                 try (BufferedReader br =
                              new BufferedReader(new FileReader(csvFile))) {
 
                     while ((line = br.readLine()) != null) {
-                        if(line.contains(String.format("%s-", noc))){
+                        if (line.contains(String.format("%s-", noc))) {
                             try (Writer writer = new BufferedWriter(new OutputStreamWriter(
                                     new FileOutputStream(file, true)))) {
                                 log.debug(line);
@@ -102,7 +103,8 @@ public class AppBody {
                             }
                         }
                     }
-                } catch (IOException e) {
+                }
+                catch (IOException e) {
                     log.info("Error writing info.");
                     log.debug(e.getMessage());
                 }
@@ -110,15 +112,16 @@ public class AppBody {
         }
     }
 
-    private void cleanUp(File directory){
+    private void cleanUp(File directory) {
         for (File f : directory.listFiles()) {
             f.delete();
         }
         directory.delete();
     }
 
-    private void downloadUrlAsFile(final String urlToDownload, File outputPath, String filename) {
-
+    private void downloadUrlAsFile(final String urlToDownload,
+                                   File outputPath,
+                                   String filename) {
         File outputFile = new File(outputPath.getPath(), filename);
         final Response response = given().when().get(urlToDownload).andReturn();
 
@@ -149,12 +152,76 @@ public class AppBody {
 
             if (outStream != null) {
                 try {
-                    log.info(String.format("Closing file %s", outputFile.getAbsolutePath()));
+                    log.info(String.format("Closing file %s",
+                            outputFile.getAbsolutePath()));
                     outStream.close();
                 }
                 catch (IOException e) {
                     log.info("Error closing file.");
                     log.debug(e.getMessage());
+                }
+            }
+        }
+    }
+
+    public void mergeAndFilterFromVariousFilteredDatasets(File directory,
+                                                          File newDirectory)
+            throws IOException {
+        String line;
+        List<String> listOfLines = new ArrayList<>();
+        List<String> listOfData = new ArrayList<>();
+        String outputFileName = "result.csv";
+        newDirectory.mkdir();
+
+        File file = new File(newDirectory.getPath(),
+                outputFileName);
+        file.createNewFile();
+        log.info(String.format("%s is created.", outputFileName));
+
+        for (File csvFile : directory.listFiles()) {
+            if (csvFile.isFile()) {
+                try (BufferedReader br =
+                             new BufferedReader(new FileReader(csvFile))) {
+
+                    while ((line = br.readLine()) != null) {
+                        listOfLines.add(line);
+                    }
+                    listOfLines.stream()
+                               .distinct()
+                               .sorted(String::compareTo)
+                               .collect(Collectors.toList());
+                    for (String l : listOfLines) {
+                        if (!l.contains(" QC ") || !l.contains("MONTREAL")
+                                || !l.contains("Montreal") || !l.contains("Montr�al")
+                                || !l.contains("MONTR�AL") || !l.contains("Qu�bec")
+                                || !l.contains("QU�BEC")) {
+//                            String neededData = l.split(",")[0];
+                            listOfData.add(l.split(",")[0]);
+                        }
+                    }
+
+                    listOfData.sort(String::compareTo);
+                    listOfData.stream()
+                              .distinct()
+                              .collect(Collectors.toList());
+                    try (Writer writer = new BufferedWriter(new OutputStreamWriter(
+                            new FileOutputStream(file, true)))) {
+                        listOfData.stream()
+                                  .map(String::toUpperCase)
+                                  .distinct()
+                                  .forEach(l -> {
+                            try {
+                                writer.write(l + "\n");
+                            }
+                            catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        });
+                    }
+                    catch (IOException e) {
+                        log.info("Error writing info.");
+                        log.debug(e.getMessage());
+                    }
                 }
             }
         }
