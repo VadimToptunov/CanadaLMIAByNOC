@@ -195,7 +195,6 @@ public class AppBody {
                                 || !l.contains("Montreal") || !l.contains("Montr�al")
                                 || !l.contains("MONTR�AL") || !l.contains("Qu�bec")
                                 || !l.contains("QU�BEC")) {
-//                            String neededData = l.split(",")[0];
                             listOfData.add(l.split(",")[0]);
                         }
                     }
