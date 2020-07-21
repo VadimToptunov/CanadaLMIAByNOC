@@ -9,18 +9,31 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class AppBody {
-    public void createAFileByNoc(String noc) {
+    public void createAFileByNoc() {
         File outputPath = new File("Downloads/NOCs");
         File finalOutputPath = new File("Downloads/NOC_Result");
+        File resultPath = new File("Downloads/CumulativeResult");
         List<String> csvUrls = getCsvFilesLinks();
-        downloadCsvFilesByLink(csvUrls, noc, outputPath);
+        downloadCsvFilesByLink(csvUrls, outputPath);
+        String[] nocs = {"2171", "2172", "2173", "2174", "2175", "2281",
+                "2283"};
+        for (String noc : nocs) {
+            try {
+                filterCsvByNoc(noc, outputPath, finalOutputPath);
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
         try {
-            filterCsvByNoc(noc, outputPath, finalOutputPath);
+            mergeAndFilterFromVariousFilteredDatasets(finalOutputPath,
+                    resultPath);
         }
         catch (IOException e) {
             e.printStackTrace();
         }
         cleanUp(outputPath);
+        cleanUp(finalOutputPath);
     }
 
 
@@ -61,12 +74,12 @@ public class AppBody {
         return urls;
     }
 
-    private void downloadCsvFilesByLink(List<String> urls, String noc,
+    private void downloadCsvFilesByLink(List<String> urls,
                                         File downloadFolder) {
         log.debug(String.format("Folder to save csv-files: %s", downloadFolder));
         downloadFolder.mkdirs();
         for (String url : urls) {
-            String downloadFileName = String.format("noc_%s_%s.csv", noc,
+            String downloadFileName = String.format("noc_%s.csv",
                     UUID.randomUUID());
             File checkDownloaded = new File(downloadFolder.getPath(), downloadFileName);
             if (checkDownloaded.exists()) {
@@ -184,45 +197,77 @@ public class AppBody {
                              new BufferedReader(new FileReader(csvFile))) {
 
                     while ((line = br.readLine()) != null) {
-                        listOfLines.add(line);
+                        if (!line.contains("Employers who")
+                                || !line.contains("Province/Territory")){
+                            listOfLines.add(line);
+                        }
                     }
                     listOfLines.stream()
                                .distinct()
-                               .sorted(String::compareTo)
                                .collect(Collectors.toList());
-                    for (String l : listOfLines) {
-                        if (!l.contains(" QC ") || !l.contains("MONTREAL")
-                                || !l.contains("Montreal") || !l.contains("Montr�al")
-                                || !l.contains("MONTR�AL") || !l.contains("Qu�bec")
-                                || !l.contains("QU�BEC")) {
-                            listOfData.add(l.split(",")[0]);
-                        }
-                    }
 
-                    listOfData.sort(String::compareTo);
-                    listOfData.stream()
-                              .distinct()
-                              .collect(Collectors.toList());
-                    try (Writer writer = new BufferedWriter(new OutputStreamWriter(
-                            new FileOutputStream(file, true)))) {
-                        listOfData.stream()
-                                  .map(String::toUpperCase)
-                                  .distinct()
-                                  .forEach(l -> {
-                            try {
-                                writer.write(l + "\n");
-                            }
-                            catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        });
-                    }
-                    catch (IOException e) {
-                        log.info("Error writing info.");
-                        log.debug(e.getMessage());
+                    for (String l : listOfLines) {
+                            String employeeOne = getData(l, 1);
+                            String employeeTwo = getData(l, 2);
+                            listOfData.add(employeeOne);
+                            listOfData.add(employeeTwo);
+                        listOfData.sort(String::compareTo);
                     }
                 }
             }
         }
+        listOfData.stream()
+                  .sorted()
+                  .distinct()
+                  .collect(Collectors.toList());
+
+        listOfData.removeIf(lne -> lne.matches("^((.*[Ô,É,È]\\w*|\\w*[Ô,É," +
+                "È]|UNIVERSIT‚|MONTR‚AL|QU,BEC)(\\s\\S\\w+)(\\s\\w*))$"));
+
+        try (Writer writer = new BufferedWriter(new OutputStreamWriter(
+                new FileOutputStream(file, true)))) {
+
+            listOfData.stream().distinct().
+                    skip(1)
+                      .forEach(l -> {
+                          try {
+                              String emp = l + "\n";
+                              writer.write(emp);
+                              log.debug(emp);
+                          }
+                          catch (IOException e) {
+                              e.printStackTrace();
+                          }
+                      });
+        }
+        catch (IOException e) {
+            log.info("Error writing info.");
+            log.debug(e.getMessage());
+        }
+    }
+
+    private String getData(String line, int number){
+        return line.split(",")[number]
+                .toUpperCase()
+                .replace(".", "")
+                .replace("  ", " ")
+                .replace("\"", "")
+                .replace("INCORPORATED", "INC")
+                .replace("LIMITED", "LTD")
+                .replaceAll("((HIGH|LOW) WAGE|(GLOBAL " +
+                        "TALENT STREAM|GLOBAL TALENT)|PRIMARY AGRICULTURE)",
+                        "")
+                .replaceAll("\\d{6,8} (CANADA|CANDA|ONTARIO" +
+                        "|MANITOBA|ALBERTA|BC) " +
+                        "(INC|LTD|CORPORATION|CORP)", "")
+                .replaceAll("\\d{6,8} (CANADA|ONTARIO" +
+                        "|MANITOBA|ALBERTA|BC)","")
+                .replaceAll("(\\d{4}-\\d{4} (QU\\SBEC|QC)" +
+                        " (INC|LTD)|\\d{4}-\\d{4}QUEBECINC)", "")
+                .replace(" O/A ", "")
+                .replace(" (", "")
+                .replace("(", "")
+                .replace(") ", "")
+                .replace(")", "");
     }
 }
