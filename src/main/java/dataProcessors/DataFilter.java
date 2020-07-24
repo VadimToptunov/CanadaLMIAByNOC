@@ -9,7 +9,16 @@ import java.util.stream.Collectors;
 
 @Slf4j
 public class DataFilter {
-    public void filterCsvByNoc(String noc, File directory, File newDirectory) throws IOException {
+    private final File directory;
+    private final File newDirectory;
+    private final File outputDirectory;
+
+    public DataFilter(File directory, File newDirectory, File outputDirectory){
+        this.directory = directory;
+        this.newDirectory = newDirectory;
+        this.outputDirectory = outputDirectory;
+    }
+    public void filterCsvByNoc(String noc) throws IOException {
         String line;
         String outputFileName = String.format("noc_%s_result.csv",
                 noc);
@@ -43,21 +52,20 @@ public class DataFilter {
         }
     }
 
-    public void mergeAndFilterFromVariousFilteredDatasets(File directory,
-                                                          File newDirectory)
+    public void mergeAndFilterFromVariousFilteredDatasets()
             throws IOException {
         String line;
         List<String> listOfLines = new ArrayList<>();
         List<String> listOfData = new ArrayList<>();
         String outputFileName = "result.csv";
-        newDirectory.mkdir();
+        outputDirectory.mkdir();
 
         File file = new File(newDirectory.getPath(),
                 outputFileName);
         file.createNewFile();
         log.info(String.format("%s is created.", outputFileName));
 
-        for (File csvFile : directory.listFiles()) {
+        for (File csvFile : newDirectory.listFiles()) {
             if (csvFile.isFile()) {
                 try (BufferedReader br =
                              new BufferedReader(new FileReader(csvFile))) {
@@ -112,7 +120,7 @@ public class DataFilter {
         }
     }
 
-    public String getData(String line, int number){
+    private String getData(String line, int number){
         return line.split(",")[number]
                 .toUpperCase()
                 .replace(".", "")

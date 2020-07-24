@@ -13,22 +13,21 @@ public class AppBody {
 
     public void createAFileByNoc() {
         DatasetDownloader datasetDownloader = new DatasetDownloader();
-        DataFilter filter = new DataFilter();
+        DataFilter filter = new DataFilter(OUTPUTPATH, FINALOUTPUTPATH, RESULTPATH);
         List<String> csvUrls = datasetDownloader.getCsvFilesLinks();
         datasetDownloader.downloadCsvFilesByLink(csvUrls, OUTPUTPATH);
         String[] nocs = {"2171", "2172", "2173", "2174", "2175", "2281",
                 "2283"};
         for (String noc : nocs) {
             try {
-                filter.filterCsvByNoc(noc, OUTPUTPATH, FINALOUTPUTPATH);
+                filter.filterCsvByNoc(noc);
             }
             catch (IOException e) {
                 e.printStackTrace();
             }
         }
         try {
-            filter.mergeAndFilterFromVariousFilteredDatasets(FINALOUTPUTPATH,
-                    RESULTPATH);
+            filter.mergeAndFilterFromVariousFilteredDatasets();
         }
         catch (IOException e) {
             e.printStackTrace();
