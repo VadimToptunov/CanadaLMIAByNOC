@@ -1,10 +1,12 @@
 package dataProcessors;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -12,136 +14,143 @@ public class DataFilter {
     private final File directory;
     private final File newDirectory;
     private final File outputDirectory;
+    private final String RESULTCSV = "result.csv";
+    private final String CUMULATEDCSV = "cumulated.csv";
 
     public DataFilter(File directory, File newDirectory, File outputDirectory){
         this.directory = directory;
         this.newDirectory = newDirectory;
         this.outputDirectory = outputDirectory;
     }
-    public void filterCsvByNoc(String noc) throws IOException {
+
+    public File filterCsvByNoc() throws IOException {
         String line;
-        String outputFileName = String.format("noc_%s_result.csv",
-                noc);
         newDirectory.mkdir();
 
         File file = new File(newDirectory.getPath(),
-                outputFileName);
+                CUMULATEDCSV);
         file.createNewFile();
-        log.info(String.format("%s is created.", outputFileName));
+        log.info(String.format("%s is created.", CUMULATEDCSV));
+        for (File fileItem : Objects.requireNonNull(directory.listFiles())) {
+            if (fileItem.getName().contains("xlsx")){
+                try {
+                    XlsToCsv.xlsx(fileItem, fileItem.toString().replace("xlsx", "csv"));
+                    fileItem.delete();
+                } catch (InvalidFormatException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
 
-        for (File csvFile : directory.listFiles()) {
+        for (File csvFile : Objects.requireNonNull(directory.listFiles())) {
             if (csvFile.isFile()) {
-                try (BufferedReader br =
-                             new BufferedReader(new FileReader(csvFile))) {
+                    try (BufferedReader br =
+                                 new BufferedReader(new FileReader(csvFile))) {
 
-                    while ((line = br.readLine()) != null) {
-                        if (line.contains(String.format("%s-", noc))) {
+                        while ((line = br.readLine()) != null) {
                             try (Writer writer = new BufferedWriter(new OutputStreamWriter(
                                     new FileOutputStream(file, true)))) {
                                 log.debug(line);
                                 writer.write(line + "\n");
                             }
                         }
+                    } catch (IOException e) {
+                        log.info("Error writing info.");
+                        log.debug(e.getMessage());
                     }
-                }
-                catch (IOException e) {
-                    log.info("Error writing info.");
-                    log.debug(e.getMessage());
-                }
             }
         }
+        return file;
     }
 
-    public void mergeAndFilterFromVariousFilteredDatasets()
-            throws IOException {
+    public void cleanUpCumulated(File cumulatedCsv) throws IOException {
         String line;
         List<String> listOfLines = new ArrayList<>();
         List<String> listOfData = new ArrayList<>();
-        String outputFileName = "result.csv";
         outputDirectory.mkdir();
 
-        File file = new File(newDirectory.getPath(),
-                outputFileName);
+        File file = new File(outputDirectory.getPath(),
+                RESULTCSV);
         file.createNewFile();
-        log.info(String.format("%s is created.", outputFileName));
+        log.info(String.format("%s is created.", RESULTCSV));
+        if (cumulatedCsv.isFile()) {
+            try (BufferedReader br =
+                         new BufferedReader(new FileReader(cumulatedCsv))) {
 
-        for (File csvFile : newDirectory.listFiles()) {
-            if (csvFile.isFile()) {
-                try (BufferedReader br =
-                             new BufferedReader(new FileReader(csvFile))) {
-
-                    while ((line = br.readLine()) != null) {
-                        if (!line.contains("Employers who")
-                                || !line.contains("Province/Territory")){
-                            listOfLines.add(line);
-                        }
-                    }
-                    listOfLines.stream()
-                               .distinct()
-                               .collect(Collectors.toList());
-
-                    for (String l : listOfLines) {
-                        String employeeOne = getData(l, 1);
-                        String employeeTwo = getData(l, 2);
-                        listOfData.add(employeeOne);
-                        listOfData.add(employeeTwo);
-                        listOfData.sort(String::compareTo);
+                while ((line = br.readLine()) != null) {
+                    if (!line.contains("Employers who")
+                            || !line.contains("Province/Territory")){
+                        listOfLines.add(line);
                     }
                 }
+                listOfLines.stream()
+                        .skip(2)
+                        .distinct()
+                        .collect(Collectors.toList());
+
+                for (String l : listOfLines) {
+                    if ((getData(l).employer != null
+                            && !Objects.equals(getData(l).employer, "")
+                            && getData(l).employer.length() > 1)
+                            && !Objects.equals(getData(l).employer, "(blank)")
+                            && (!getData(l).fullNoc.matches("\\d")
+                            && getData(l).fullNoc.split("-")[0]
+                            .matches("\\d{4}"))){
+                        listOfData.add(String.format("%s, %s"
+                                        .replaceAll("[\"\\t \\n]", ""),
+                                getData(l).employer
+                                        .trim()
+                                        .replaceAll("\"", "")
+                                        .replaceAll("#\\d ", "")
+                                        .replaceAll("\\t", ""),
+                                getData(l).fullNoc
+                                        .trim()
+                                        .replaceAll("\"", "")
+                                        .split("-")[0]
+                        ));
+                    }
+                    listOfData.sort(String::compareTo);
+                }
+                log.debug(String.valueOf(listOfData));
             }
         }
         listOfData.stream()
-                  .sorted()
+                .sorted()
                   .distinct()
                   .collect(Collectors.toList());
 
-        listOfData.removeIf(lne -> lne.matches("^((.*[Ô,É,È]\\w*|\\w*[Ô,É," +
-                "È]|UNIVERSIT‚|MONTR‚AL|QU,BEC)(\\s\\S\\w+)(\\s\\w*))$"));
-
         try (Writer writer = new BufferedWriter(new OutputStreamWriter(
-                new FileOutputStream(file, true)))) {
+            new FileOutputStream(file, true)))) {
 
-            listOfData.stream().distinct().
-                    skip(1)
-                      .forEach(l -> {
-                          try {
-                              String emp = l + "\n";
-                              writer.write(emp);
-                              log.debug(emp);
-                          }
-                          catch (IOException e) {
-                              e.printStackTrace();
-                          }
-                      });
+        listOfData.stream().distinct().
+                forEach(l -> {
+                    try {
+                        writer.write(l + "\n");
+                        log.debug(l + "\n");
+                    }
+                    catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
         }
         catch (IOException e) {
-            log.info("Error writing info.");
-            log.debug(e.getMessage());
+        log.info("Error writing info.");
+        log.debug(e.getMessage());
         }
     }
 
-    private String getData(String line, int number){
-        return line.split(",")[number]
-                .toUpperCase()
-                .replace(".", "")
-                .replace("  ", " ")
-                .replace("\"", "")
-                .replace("INCORPORATED", "INC")
-                .replace("LIMITED", "LTD")
-                .replaceAll("((HIGH|LOW) WAGE|(GLOBAL " +
-                                "TALENT STREAM|GLOBAL TALENT)|PRIMARY AGRICULTURE)",
-                        "")
-                .replaceAll("\\d{6,8} (CANADA|CANDA|ONTARIO" +
-                        "|MANITOBA|ALBERTA|BC) " +
-                        "(INC|LTD|CORPORATION|CORP)", "")
-                .replaceAll("\\d{6,8} (CANADA|ONTARIO" +
-                        "|MANITOBA|ALBERTA|BC)","")
-                .replaceAll("(\\d{4}-\\d{4} (QU\\SBEC|QC)" +
-                        " (INC|LTD)|\\d{4}-\\d{4}QUEBECINC)", "")
-                .replace(" O/A ", "")
-                .replace(" (", "")
-                .replace("(", "")
-                .replace(") ", "")
-                .replace(")", "");
+
+    private CsvData getData(String line){
+        String[] splittedArray = line.split(",");
+        if (splittedArray.length >= 6){
+            String province = splittedArray[0];
+            String program = splittedArray[1];
+            String employer = splittedArray[2];
+            String city = splittedArray[3];
+            String postalCode = splittedArray[4];
+            String fullNoc = splittedArray[5];
+            return new CsvData(province, program, employer, city, postalCode, fullNoc);
+        }
+        return new CsvData("", "", "", "", "", "");
     }
 }

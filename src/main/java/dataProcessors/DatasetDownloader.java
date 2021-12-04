@@ -56,8 +56,8 @@ public class DatasetDownloader {
         log.debug(String.format("Folder to save csv-files: %s", downloadFolder));
         downloadFolder.mkdirs();
         for (String url : urls) {
-            String downloadFileName = String.format("noc_%s.csv",
-                    UUID.randomUUID());
+            String[] splitted = url.split("/");
+            String downloadFileName = splitted[splitted.length - 1];
             File checkDownloaded = new File(downloadFolder.getPath(), downloadFileName);
             if (checkDownloaded.exists()) {
                 checkDownloaded.delete();
@@ -75,10 +75,6 @@ public class DatasetDownloader {
         final Response response = given().when().get(urlToDownload).andReturn();
 
         if (response.getStatusCode() == 200) {
-
-            if (outputFile.exists()) {
-                outputFile.delete();
-            }
             byte[] fileContents = response.getBody().asByteArray();
             log.info("Writing to file from url.");
             writeToFile(fileContents, outputFile);

@@ -6,7 +6,7 @@ import java.util.*;
 
 @Slf4j
 public class AppBody {
-    private final String DOWNLOADS = "Downloads/";
+    private final java.lang.String DOWNLOADS = "Downloads/";
     private final File OUTPUTPATH = new File(DOWNLOADS + "NOCs");
     private final File FINALOUTPUTPATH = new File(DOWNLOADS + "NOC_Result");
     private final File RESULTPATH = new File(DOWNLOADS + "CumulativeResult");
@@ -16,18 +16,16 @@ public class AppBody {
         DataFilter filter = new DataFilter(OUTPUTPATH, FINALOUTPUTPATH, RESULTPATH);
         List<String> csvUrls = datasetDownloader.getCsvFilesLinks();
         datasetDownloader.downloadCsvFilesByLink(csvUrls, OUTPUTPATH);
-        String[] nocs = {"2171", "2172", "2173", "2174", "2175", "2281",
-                "2283"};
-        for (String noc : nocs) {
-            try {
-                filter.filterCsvByNoc(noc);
-            }
-            catch (IOException e) {
-                e.printStackTrace();
-            }
+        File cumulatedCsv = null;
+        try {
+            cumulatedCsv = filter.filterCsvByNoc();
+        }
+        catch (IOException e) {
+            e.printStackTrace();
         }
         try {
-            filter.mergeAndFilterFromVariousFilteredDatasets();
+            assert cumulatedCsv != null;
+            filter.cleanUpCumulated(cumulatedCsv);
         }
         catch (IOException e) {
             e.printStackTrace();
@@ -37,7 +35,7 @@ public class AppBody {
     }
 
     private void cleanUp(File directory) {
-        for (File f : directory.listFiles()) {
+        for (File f : Objects.requireNonNull(directory.listFiles())) {
             f.delete();
         }
         directory.delete();
