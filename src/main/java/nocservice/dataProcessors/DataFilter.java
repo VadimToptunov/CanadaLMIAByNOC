@@ -1,7 +1,10 @@
-package dataProcessors;
+package nocservice.dataProcessors;
 
 import lombok.extern.slf4j.Slf4j;
+import nocservice.model.EmployersByNoc;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.springframework.beans.factory.annotation.Autowired;
+import nocservice.repository.JdbcEmployersByNocRepository;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -13,14 +16,14 @@ import java.util.stream.Collectors;
 public class DataFilter {
     private final File directory;
     private final File newDirectory;
-    private final File outputDirectory;
-    private final String RESULTCSV = "result.csv";
     private final String CUMULATEDCSV = "cumulated.csv";
 
-    public DataFilter(File directory, File newDirectory, File outputDirectory){
+    @Autowired
+    JdbcEmployersByNocRepository jdbcEmployersByNocRepository;
+
+    public DataFilter(File directory, File newDirectory){
         this.directory = directory;
         this.newDirectory = newDirectory;
-        this.outputDirectory = outputDirectory;
     }
 
     public File filterCsvByNoc() throws IOException {
@@ -66,13 +69,7 @@ public class DataFilter {
     public void cleanUpCumulated(File cumulatedCsv) throws IOException {
         String line;
         List<String> listOfLines = new ArrayList<>();
-        List<String> listOfData = new ArrayList<>();
-        outputDirectory.mkdir();
-
-        File file = new File(outputDirectory.getPath(),
-                RESULTCSV);
-        file.createNewFile();
-        log.info(String.format("%s is created.", RESULTCSV));
+        List<ArrayList> listOfData = new ArrayList<>();
         if (cumulatedCsv.isFile()) {
             try (BufferedReader br =
                          new BufferedReader(new FileReader(cumulatedCsv))) {
@@ -89,6 +86,7 @@ public class DataFilter {
                         .collect(Collectors.toList());
 
                 for (String l : listOfLines) {
+                    ArrayList tempList = new ArrayList();
                     if ((getData(l).employer != null
                             && !Objects.equals(getData(l).employer, "")
                             && getData(l).employer.length() > 1)
@@ -96,48 +94,29 @@ public class DataFilter {
                             && (!getData(l).fullNoc.matches("\\d")
                             && getData(l).fullNoc.split("-")[0]
                             .matches("\\d{4}"))){
-                        listOfData.add(String.format("%s, %s"
-                                        .replaceAll("[\"\\t \\n]", ""),
-                                getData(l).employer
+                        tempList.add(getData(l).employer
                                         .trim()
                                         .replaceAll("\"", "")
                                         .replaceAll("#\\d ", "")
-                                        .replaceAll("\\t", ""),
-                                getData(l).fullNoc
+                                        .replaceAll("\\t", ""));
+                        tempList.add(getData(l).fullNoc
                                         .trim()
                                         .replaceAll("\"", "")
-                                        .split("-")[0]
-                        ));
+                                        .split("-")[0]);
                     }
-                    listOfData.sort(String::compareTo);
+                    listOfData.add(tempList);
+                    listOfData.removeIf(element -> element.size() == 0);
                 }
                 log.debug(String.valueOf(listOfData));
             }
         }
+
         listOfData.stream()
-                .sorted()
-                  .distinct()
-                  .collect(Collectors.toList());
-
-        try (Writer writer = new BufferedWriter(new OutputStreamWriter(
-            new FileOutputStream(file, true)))) {
-
-        listOfData.stream().distinct().
-                forEach(l -> {
-                    try {
-                        writer.write(l + "\n");
-                        log.debug(l + "\n");
-                    }
-                    catch (IOException e) {
-                        e.printStackTrace();
-                    }
+                .distinct()
+                .forEach(l -> {
+                    insertIntoDB(l.get(0).toString(), l.get(1).toString());
                 });
         }
-        catch (IOException e) {
-        log.info("Error writing info.");
-        log.debug(e.getMessage());
-        }
-    }
 
 
     private CsvData getData(String line){
@@ -152,5 +131,15 @@ public class DataFilter {
             return new CsvData(province, program, employer, city, postalCode, fullNoc);
         }
         return new CsvData("", "", "", "", "", "");
+    }
+
+    private void insertIntoDB(String employer, String noc) {
+
+        try {
+            jdbcEmployersByNocRepository.save(new EmployersByNoc(employer, noc));
+            log.info("Employer line was created successfully.");
+        } catch (Exception e) {
+            log.error(e.getMessage());
+        }
     }
 }

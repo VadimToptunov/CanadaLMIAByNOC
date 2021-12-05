@@ -1,4 +1,4 @@
-package dataProcessors;
+package nocservice.dataProcessors;
 
 import lombok.Data;
 
