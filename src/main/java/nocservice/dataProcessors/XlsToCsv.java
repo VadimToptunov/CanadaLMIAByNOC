@@ -19,7 +19,7 @@ public class XlsToCsv {
                      new BufferedReader(new StringReader(tsv))) {
             while ((line = reader.readLine()) != null) {
                 String[] record = line.split("\t");
-                output.printRecord(record);
+                output.printRecord((Object) record);
             }
         }
     }
