@@ -18,7 +18,7 @@ public class DatasetDownloader {
         List<String> urls = new ArrayList<>();
         baseURI = "https://open.canada.ca";
         Map<String, String> headers = new TreeMap<>();
-        headers.put("User-Agent", "PostmanRuntime/7.26.1");
+        headers.put("User-Agent", String.valueOf(UUID.randomUUID().getLeastSignificantBits()));
         headers.put("Postman-Token", UUID.randomUUID().toString());
         headers.put("Accept", "*/*");
         headers.put("Cache-Control", "no-cache");
@@ -35,15 +35,12 @@ public class DatasetDownloader {
         log.debug(String.valueOf(listOfResults));
         for (LinkedHashMap r : listOfResults) {
             String name = r.get("name").toString();
-            if (name.contains(
-                    "National Occupational Classification (NOC)") &&
-                    (name.contains("Positive") ||
-                            name.contains("positive"))) {
+            String lcase = name.toLowerCase();
+            if (lcase.contains("national occupational classification (noc)")
+                    && lcase.contains("positive") && lcase.contains("en")) {
                 log.debug(String.format("File name is : %s", name));
                 String urlString = r.get("url").toString();
-                if (urlString.contains("EN")) {
-                    log.debug(String.format("CSV file to download: %s",
-                            urlString));
+                if (!urlString.toLowerCase().contains("_fr") && !urlString.toLowerCase().contains("useb")) {
                     urls.add(urlString);
                 }
             }
