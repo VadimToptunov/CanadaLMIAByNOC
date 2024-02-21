@@ -5,20 +5,18 @@ import java.util.*;
 
 @Slf4j
 public class AppBody {
-    private final java.lang.String DOWNLOADS = "Downloads/";
-    private final File OUTPUTPATH = new File(DOWNLOADS + "NOCs");
+    private static final File OUTPUT_DIRECTORY = new File("savedDatasets/NOCs/");
 
-    public void createAFileByNoc() {
+    public void downloadDatasets() {
         DatasetDownloader datasetDownloader = new DatasetDownloader();
-        List<String> csvUrls = datasetDownloader.getCsvFilesLinks();
-        datasetDownloader.downloadCsvFilesByLink(csvUrls, OUTPUTPATH);
+        datasetDownloader.downloadFiles(OUTPUT_DIRECTORY);
         //TODO: Read files, cleanup them from excess data and save to the DB.
 //        cleanUp(OUTPUTPATH);
     }
 
-    private void cleanUp(File directory) {
-        for (File f : Objects.requireNonNull(directory.listFiles())) {
-            f.delete();
+    private void cleanUpDirectory(File directory) {
+        for (File file : Objects.requireNonNull(directory.listFiles())) {
+            file.delete();
         }
         directory.delete();
     }

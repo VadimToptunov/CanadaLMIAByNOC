@@ -3,6 +3,6 @@
 *.iml
 .idea
 target/
-Downloads/
+savedDatasets/
 .DS_Store
 *.log
