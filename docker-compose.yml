@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: lmia-postgres
+    environment:
+      POSTGRES_DB: lmia_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lmia-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lmia-app
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lmia_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lmia-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  lmia-network:
+    driver: bridge
+

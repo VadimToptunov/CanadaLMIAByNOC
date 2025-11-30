@@ -1,0 +1,13 @@
+target/
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+*.log
+savedDatasets/
+.DS_Store
+*.md
+!README.md
+LICENSE
+

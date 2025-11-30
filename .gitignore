@@ -1,8 +1,29 @@
-# Project exclude paths
-/target/.idea
-*.iml
-.idea
+# Compiled class files
 target/
-savedDatasets/
-.DS_Store
+*.class
+
+# Log files
 *.log
+logfile.log
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Application properties with sensitive data
+src/main/resources/application-local.properties
+
+# Database files
+*.db
+*.sqlite
+
+# Downloaded datasets
+savedDatasets/
