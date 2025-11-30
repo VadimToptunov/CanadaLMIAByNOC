@@ -1,0 +1,77 @@
+# Docker Compose configuration for monitoring stack
+# Includes: Prometheus, Grafana, and Alertmanager (optional)
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lmia-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - lmia-network
+    restart: unless-stopped
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lmia-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - lmia-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Optional: Alertmanager for alert notifications
+  # alertmanager:
+  #   image: prom/alertmanager:latest
+  #   container_name: lmia-alertmanager
+  #   ports:
+  #     - "9093:9093"
+  #   volumes:
+  #     - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+  #     - alertmanager_data:/alertmanager
+  #   command:
+  #     - '--config.file=/etc/alertmanager/alertmanager.yml'
+  #     - '--storage.path=/alertmanager'
+  #   networks:
+  #     - lmia-network
+  #   restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  # alertmanager_data:
+
+networks:
+  lmia-network:
+    external: false
+

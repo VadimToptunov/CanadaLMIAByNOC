@@ -1,0 +1,39 @@
+-- Создание базы данных (выполнить отдельно)
+-- CREATE DATABASE lmia_db;
+
+-- Создание таблицы (выполняется автоматически через Hibernate ddl-auto=update)
+-- Но можно использовать для ручного создания:
+
+CREATE TABLE IF NOT EXISTS lmia_datasets (
+    id BIGSERIAL PRIMARY KEY,
+    province VARCHAR(255) NOT NULL,
+    stream VARCHAR(255) NOT NULL,
+    employer VARCHAR(500) NOT NULL,
+    city VARCHAR(200),
+    postal_code VARCHAR(20),
+    noc_code VARCHAR(10) NOT NULL,
+    noc_title VARCHAR(500),
+    positions_approved INTEGER NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    decision_date DATE NOT NULL,
+    source_file VARCHAR(50),
+    website_url VARCHAR(500)
+);
+
+-- Создание индексов для оптимизации поиска
+CREATE INDEX IF NOT EXISTS idx_employer ON lmia_datasets(employer);
+CREATE INDEX IF NOT EXISTS idx_noc ON lmia_datasets(noc_code);
+CREATE INDEX IF NOT EXISTS idx_province ON lmia_datasets(province);
+CREATE INDEX IF NOT EXISTS idx_date ON lmia_datasets(decision_date);
+CREATE INDEX IF NOT EXISTS idx_status ON lmia_datasets(status);
+CREATE INDEX IF NOT EXISTS idx_employer_lower ON lmia_datasets(LOWER(employer));
+
+-- Composite indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_employer_status ON lmia_datasets(employer, status);
+CREATE INDEX IF NOT EXISTS idx_noc_status ON lmia_datasets(noc_code, status);
+CREATE INDEX IF NOT EXISTS idx_province_status ON lmia_datasets(province, status);
+CREATE INDEX IF NOT EXISTS idx_date_status ON lmia_datasets(decision_date, status);
+
+-- Index for website URL lookups
+CREATE INDEX IF NOT EXISTS idx_website_url ON lmia_datasets(website_url) WHERE website_url IS NOT NULL;
+

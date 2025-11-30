@@ -1,9 +1,46 @@
-# Project exclude paths
-/target/.idea
+# IDE
+.idea/
 *.iml
-.idea
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build
 target/
-Downloads/
-.DS_Store
+*.class
+*.jar
+*.war
+*.ear
 *.log
-src/main/resources/application.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+prometheus_data/
+grafana_data/
+alertmanager_data/
+
+# Application logs
+*.log.*
+*.log.error
+*.log.json
+
+# Environment
+.env
+.env.local
+
+# Data files
+data/
+downloads/
+*.csv
+*.xlsx
+*.xls
+
+# Temporary files
+tmp/
+temp/
