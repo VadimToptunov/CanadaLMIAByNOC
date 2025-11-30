@@ -12,7 +12,6 @@ import repository.DatasetRepository;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 @Slf4j
 @Service
@@ -25,6 +24,10 @@ public class AppBody {
 
     private final DatasetDownloader datasetDownloader;
     private final DataParser dataParser;
+    
+    // Self-injection to ensure Spring AOP proxy is used for @Transactional methods
+    @Autowired
+    private AppBody self;
 
     @Autowired
     public AppBody(DatasetDownloader datasetDownloader, DataParser dataParser) {
@@ -32,12 +35,19 @@ public class AppBody {
         this.dataParser = dataParser;
     }
 
-    @Transactional
+    /**
+     * Downloads datasets from open.canada.ca and processes them.
+     * Note: This method is NOT transactional because it performs file I/O operations
+     * (network downloads and file writes) which should not hold database connections.
+     * Only processAndSaveDatasets() handles database transactions.
+     * Uses self-injection to ensure @Transactional annotation is properly applied via Spring AOP proxy.
+     */
     public void downloadDatasets() {
         log.info("Starting dataset download process...");
         datasetDownloader.downloadFiles(OUTPUT_DIRECTORY);
         log.info("Download completed. Starting data processing...");
-        processAndSaveDatasets();
+        // Use self-injected proxy to ensure @Transactional is applied
+        self.processAndSaveDatasets();
     }
 
     @Transactional
@@ -111,14 +121,12 @@ public class AppBody {
 
     private boolean isDuplicate(Dataset dataset) {
         // Check if a record with the same key fields already exists
-        return datasetRepository.findByEmployerContainingIgnoreCase(dataset.getEmployer(), 
-                org.springframework.data.domain.PageRequest.of(0, 100))
-                .getContent()
-                .stream()
-                .anyMatch(d -> d.getEmployer().equalsIgnoreCase(dataset.getEmployer()) &&
-                              d.getNocCode().equals(dataset.getNocCode()) &&
-                              d.getDecisionDate().equals(dataset.getDecisionDate()) &&
-                              Objects.equals(d.getSourceFile(), dataset.getSourceFile()));
+        // Uses exact match query without pagination limit to find all duplicates
+        return datasetRepository.existsByKeyFields(
+                dataset.getEmployer(),
+                dataset.getNocCode(),
+                dataset.getDecisionDate(),
+                dataset.getSourceFile());
     }
 
     public long getTotalRecordsCount() {

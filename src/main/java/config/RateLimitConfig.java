@@ -71,6 +71,25 @@ public class RateLimitConfig implements WebMvcConfigurer {
             checkAndResetWindow();
             return count.get() >= MAX_REQUESTS_PER_MINUTE;
         }
+
+        /**
+         * Atomically checks if limit is exceeded and increments if not.
+         * Returns true if the request should be allowed, false if limit exceeded.
+         * This method ensures thread-safety by performing check and increment in a single atomic operation.
+         */
+        public boolean tryIncrement() {
+            checkAndResetWindow();
+            // Atomically check and increment: if current value is less than limit, increment and return true
+            // Otherwise, return false without incrementing
+            int current;
+            do {
+                current = count.get();
+                if (current >= MAX_REQUESTS_PER_MINUTE) {
+                    return false;
+                }
+            } while (!count.compareAndSet(current, current + 1));
+            return true;
+        }
     }
 
     public RequestCounter getOrCreateCounter(String key) {

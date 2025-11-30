@@ -53,5 +53,17 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
     // Statistics by NOC
     @Query("SELECT d.nocCode, d.nocTitle, COUNT(d) as count FROM Dataset d WHERE d.nocCode = :nocCode GROUP BY d.nocCode, d.nocTitle")
     List<Object[]> getStatisticsByNoc(@Param("nocCode") String nocCode);
+    
+    // Check for exact duplicate by key fields (employer, NOC code, decision date, source file)
+    @Query("SELECT COUNT(d) > 0 FROM Dataset d WHERE " +
+           "LOWER(d.employer) = LOWER(:employer) AND " +
+           "d.nocCode = :nocCode AND " +
+           "d.decisionDate = :decisionDate AND " +
+           "((:sourceFile IS NULL AND d.sourceFile IS NULL) OR (:sourceFile IS NOT NULL AND d.sourceFile = :sourceFile))")
+    boolean existsByKeyFields(
+            @Param("employer") String employer,
+            @Param("nocCode") String nocCode,
+            @Param("decisionDate") LocalDate decisionDate,
+            @Param("sourceFile") String sourceFile);
 }
 

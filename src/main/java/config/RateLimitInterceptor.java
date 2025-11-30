@@ -21,14 +21,14 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         String clientId = getClientId(request);
         RateLimitConfig.RequestCounter counter = rateLimitConfig.getOrCreateCounter(clientId);
 
-        if (counter.isLimitExceeded()) {
+        // Atomically check limit and increment if allowed
+        if (!counter.tryIncrement()) {
             log.warn("Rate limit exceeded for client: {}", clientId);
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setHeader("Retry-After", "60");
             return false;
         }
 
-        counter.incrementAndGet();
         return true;
     }
 

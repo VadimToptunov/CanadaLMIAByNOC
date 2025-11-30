@@ -17,7 +17,7 @@ public class DatasetDownloader {
 
     Map<String, String> createHeaders() {
         Map<String, String> headers = new TreeMap<>();
-        headers.put("User-Agent", String.valueOf(UUID.randomUUID().getLeastSignificantBits()));
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
         headers.put("Postman-Token", UUID.randomUUID().toString());
         headers.put("Accept", "*/*");
         headers.put("Cache-Control", "no-cache");
@@ -44,14 +44,25 @@ public class DatasetDownloader {
         log.debug(String.valueOf(listOfResults));
         if (listOfResults != null) {
             for (LinkedHashMap<String, Object> r : listOfResults) {
-                String name = r.get("name").toString();
+                Object nameObj = r.get("name");
+                Object urlObj = r.get("url");
+                
+                // Null check for name and url fields
+                if (nameObj == null || urlObj == null) {
+                    log.debug("Skipping resource with missing name or url field");
+                    continue;
+                }
+                
+                String name = nameObj.toString();
                 String lcase = name.toLowerCase();
-                if (lcase.contains("national occupational classification (noc)") && lcase.contains("positive") && lcase.contains("en")) {
+                // Filter for English NOC positive datasets only
+                // The name already contains "en", so we don't need additional URL filtering
+                if (lcase.contains("national occupational classification (noc)") && 
+                    lcase.contains("positive") && 
+                    lcase.contains("en")) {
                     log.debug(String.format("File name is : %s", name));
-                    String urlString = r.get("url").toString();
-                    if (!urlString.toLowerCase().contains("_fr") && !urlString.toLowerCase().contains("useb")) {
-                        urls.add(urlString);
-                    }
+                    String urlString = urlObj.toString();
+                    urls.add(urlString);
                 }
             }
         }
@@ -88,7 +99,16 @@ public class DatasetDownloader {
         
         for (String url : urls) {
             try {
-                byte[] fileContents = given().when().get(url).asByteArray();
+                Response response = given().when().get(url);
+                
+                // Check HTTP status code before processing
+                int statusCode = response.getStatusCode();
+                if (statusCode < 200 || statusCode >= 300) {
+                    log.warn("HTTP error {} when downloading file from URL: {}. Skipping.", statusCode, url);
+                    continue;
+                }
+                
+                byte[] fileContents = response.asByteArray();
                 String fileName = url.substring(url.lastIndexOf('/') + 1);
                 // Clean filename from query parameters
                 if (fileName.contains("?")) {

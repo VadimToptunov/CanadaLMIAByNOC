@@ -21,9 +21,15 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         List<String> errors = new ArrayList<>();
         ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
             String errorMessage = error.getDefaultMessage();
-            errors.add(fieldName + ": " + errorMessage);
+            // Check if it's a FieldError before casting to avoid ClassCastException
+            if (error instanceof FieldError) {
+                String fieldName = ((FieldError) error).getField();
+                errors.add(fieldName + ": " + errorMessage);
+            } else {
+                // Handle ObjectError (class-level validation errors)
+                errors.add(error.getObjectName() + ": " + errorMessage);
+            }
         });
         
         log.warn("Validation error: {}", errors);

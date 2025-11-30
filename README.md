@@ -127,19 +127,23 @@ docker run -p 8080:8080 \
   canada-lmia-app:latest
 ```
 
-## 📊 Data Loading
+## 📊 Data Loading and Update Strategy
 
-### Via Web Interface
+### Data Update Strategy
 
+The application supports both **manual** and **automatic** data updates:
+
+#### Manual Updates (Default)
+
+By default, automatic updates are **disabled**. You can manually trigger data updates via:
+
+**Via Web Interface:**
 1. Open `http://localhost:8080`
 2. Use API endpoints to load data:
-   - `POST /api/admin/download` - download new datasets
-   - `POST /api/admin/process` - process existing files
+   - `POST /api/admin/download` - download new datasets from open.canada.ca
+   - `POST /api/admin/process` - process existing files from savedDatasets directory
 
-**Note**: Admin endpoints require authentication (username: `admin`, password: `admin`)
-
-### Via API
-
+**Via API:**
 ```bash
 # Download and process data
 curl -X POST -u admin:admin http://localhost:8080/api/admin/download
@@ -147,6 +151,50 @@ curl -X POST -u admin:admin http://localhost:8080/api/admin/download
 # Process existing files
 curl -X POST -u admin:admin http://localhost:8080/api/admin/process
 ```
+
+**Note**: Admin endpoints require authentication (username: `admin`, password: `admin`)
+
+#### Automatic Scheduled Updates
+
+The application includes a **scheduled task** for automatic data updates. This is useful because:
+- LMIA data on open.canada.ca is typically updated **quarterly** (every 3 months)
+- The scheduler can check for new data **weekly** to catch updates promptly
+- Duplicate detection ensures no data is inserted twice
+
+**To enable automatic updates:**
+
+1. Edit `src/main/resources/application.properties`:
+```properties
+# Enable automatic data updates
+app.data-update.enabled=true
+
+# Schedule: First day of every month at 2:00 AM (default)
+app.data-update.cron=0 0 2 1 * *
+
+# Optional: Customize schedule
+# Examples:
+#   "0 0 2 1 * *" - First day of every month at 2:00 AM (recommended)
+#   "0 0 2 * * SUN" - Every Sunday at 2:00 AM
+#   "0 0 */6 * * *" - Every 6 hours
+```
+
+2. Restart the application
+
+**Update Process:**
+1. Downloads new datasets from open.canada.ca API
+2. Processes CSV/Excel files
+3. Saves to database with automatic duplicate detection
+4. Logs results for monitoring
+
+**Monitoring:**
+- Check application logs for scheduled update results
+- Use `/api/admin/stats` endpoint to verify record counts
+- Failed updates are logged but don't stop the scheduler
+
+**Recommendation:**
+- For production: Enable monthly updates (default: 1st of month at 2 AM)
+  - LMIA data is typically updated quarterly, so monthly checks are sufficient
+- For development: Keep disabled and update manually as needed
 
 ## 🔍 API Endpoints
 
