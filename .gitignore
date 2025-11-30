@@ -21,13 +21,11 @@ target/
 Thumbs.db
 
 # Docker
-*.log
 prometheus_data/
 grafana_data/
 alertmanager_data/
 
 # Application logs
-*.log
 *.log.*
 *.log.error
 *.log.json

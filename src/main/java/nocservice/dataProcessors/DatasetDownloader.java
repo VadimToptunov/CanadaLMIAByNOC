@@ -1,4 +1,4 @@
-package dataProcessors;
+package nocservice.dataProcessors;
 
 import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
