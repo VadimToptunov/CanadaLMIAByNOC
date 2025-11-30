@@ -33,15 +33,31 @@ public class DatasetDownloader {
                 .queryParam("q", "lmia")
                 .get("/data/en/api/3/action/package_search");
         log.info("Sent request to get data on LMIA datasets by NOC.");
+        
+        // Check HTTP status code before processing
+        int statusCode = response.getStatusCode();
+        if (statusCode < 200 || statusCode >= 300) {
+            log.error("HTTP error {} when requesting dataset list from open.canada.ca API", statusCode);
+            log.debug("Response body: {}", response.prettyPrint());
+            throw new RuntimeException("Failed to retrieve dataset list: HTTP " + statusCode);
+        }
+        
         log.debug(response.prettyPrint());
-
         return response;
     }
 
     private List<String> parseResponseAndExtractLinks(Response response) {
         List<String> urls = new ArrayList<>();
-        List<LinkedHashMap<String, Object>> listOfResults = response.jsonPath().get("result" + ".results[0].resources");
-        log.debug(String.valueOf(listOfResults));
+        
+        // Verify response is successful before parsing JSON
+        if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
+            log.error("Cannot parse response: HTTP status code {}", response.getStatusCode());
+            return urls; // Return empty list
+        }
+        
+        try {
+            List<LinkedHashMap<String, Object>> listOfResults = response.jsonPath().get("result" + ".results[0].resources");
+            log.debug(String.valueOf(listOfResults));
         if (listOfResults != null) {
             for (LinkedHashMap<String, Object> r : listOfResults) {
                 Object nameObj = r.get("name");
@@ -65,6 +81,9 @@ public class DatasetDownloader {
                     urls.add(urlString);
                 }
             }
+        } catch (Exception e) {
+            log.error("Error parsing JSON response from API: {}", e.getMessage(), e);
+            log.debug("Response body: {}", response.prettyPrint());
         }
 
         return urls;

@@ -102,7 +102,8 @@ public class ExportService {
                 row.createCell(7).setCellValue(dataset.getNocTitle() != null ? dataset.getNocTitle() : "");
                 row.createCell(8).setCellValue(dataset.getPositionsApproved());
                 row.createCell(9).setCellValue(dataset.getStatus().name());
-                row.createCell(10).setCellValue(dataset.getDecisionDate().toString());
+                // Defensive null check for decisionDate (though marked as non-nullable in entity)
+                row.createCell(10).setCellValue(dataset.getDecisionDate() != null ? dataset.getDecisionDate().toString() : "");
                 row.createCell(11).setCellValue(dataset.getSourceFile() != null ? dataset.getSourceFile() : "");
             }
 
