@@ -13,6 +13,7 @@ import service.CompanyWebsiteService;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Configuration for scheduled data update tasks.
@@ -39,10 +40,12 @@ public class ScheduledTasksConfig {
     private int websiteUrlBatchSize;
 
     // Flag to prevent concurrent execution of scheduled tasks
-    private volatile boolean isUpdateInProgress = false;
+    // Using AtomicBoolean for atomic check-and-set operations to prevent race conditions
+    private final AtomicBoolean isUpdateInProgress = new AtomicBoolean(false);
     
     // Flag to prevent concurrent execution of website URL update tasks
-    private volatile boolean isWebsiteUrlUpdateInProgress = false;
+    // Using AtomicBoolean for atomic check-and-set operations to prevent race conditions
+    private final AtomicBoolean isWebsiteUrlUpdateInProgress = new AtomicBoolean(false);
 
     // Maximum timeout for data update task (24 hours - should be more than enough for monthly updates)
     private static final long UPDATE_TIMEOUT_HOURS = 24;
@@ -64,14 +67,15 @@ public class ScheduledTasksConfig {
      */
     @Scheduled(cron = "${app.data-update.cron:0 0 2 1 * *}")
     public void scheduledDataUpdate() {
-        // Prevent concurrent execution if previous task is still running
-        if (isUpdateInProgress) {
+        // Atomically check and set flag to prevent concurrent execution
+        // compareAndSet(expectedValue, newValue) returns true only if current value equals expectedValue
+        // This ensures only one thread can set the flag from false to true
+        if (!isUpdateInProgress.compareAndSet(false, true)) {
             log.warn("Scheduled data update skipped: previous update is still in progress");
             return;
         }
 
         log.info("Starting scheduled data update task...");
-        isUpdateInProgress = true;
 
         try {
             // Start async download and wait for completion with timeout
@@ -108,7 +112,8 @@ public class ScheduledTasksConfig {
             // Don't throw exception to prevent scheduler from stopping
         } finally {
             // Always clear the flag, even if there was an error
-            isUpdateInProgress = false;
+            // Use set(false) to reset the flag atomically
+            isUpdateInProgress.set(false);
         }
     }
 
@@ -139,14 +144,15 @@ public class ScheduledTasksConfig {
     @Scheduled(cron = "${app.website-url-update.cron:0 0 4 * * SUN}")
     @ConditionalOnProperty(name = "app.website-url-update.enabled", havingValue = "true", matchIfMissing = false)
     public void scheduledWebsiteUrlUpdate() {
-        // Prevent concurrent execution if previous task is still running
-        if (isWebsiteUrlUpdateInProgress) {
+        // Atomically check and set flag to prevent concurrent execution
+        // compareAndSet(expectedValue, newValue) returns true only if current value equals expectedValue
+        // This ensures only one thread can set the flag from false to true
+        if (!isWebsiteUrlUpdateInProgress.compareAndSet(false, true)) {
             log.warn("Scheduled website URL update skipped: previous update is still in progress");
             return;
         }
 
         log.info("Starting scheduled website URL update task...");
-        isWebsiteUrlUpdateInProgress = true;
 
         try {
             int found = companyWebsiteService.findAndUpdateMissingUrls(websiteUrlBatchSize);
@@ -156,7 +162,8 @@ public class ScheduledTasksConfig {
             // Don't throw exception to prevent scheduler from stopping
         } finally {
             // Always clear the flag, even if there was an error
-            isWebsiteUrlUpdateInProgress = false;
+            // Use set(false) to reset the flag atomically
+            isWebsiteUrlUpdateInProgress.set(false);
         }
     }
 }

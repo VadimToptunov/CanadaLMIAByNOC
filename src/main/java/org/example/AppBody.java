@@ -5,8 +5,8 @@ import dataProcessors.DatasetDownloader;
 import lombok.extern.slf4j.Slf4j;
 import model.Dataset;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import repository.DatasetRepository;
@@ -15,6 +15,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
 @Slf4j
 @Service
@@ -27,6 +28,7 @@ public class AppBody {
 
     private final DatasetDownloader datasetDownloader;
     private final DataParser dataParser;
+    private final Executor downloadTaskExecutor;
     
     // Self-injection to ensure Spring AOP proxy is used for @Transactional methods
     // @Lazy breaks the circular dependency cycle
@@ -35,9 +37,12 @@ public class AppBody {
     private AppBody self;
 
     @Autowired
-    public AppBody(DatasetDownloader datasetDownloader, DataParser dataParser) {
+    public AppBody(DatasetDownloader datasetDownloader, 
+                   DataParser dataParser,
+                   @Qualifier("downloadTaskExecutor") Executor downloadTaskExecutor) {
         this.datasetDownloader = datasetDownloader;
         this.dataParser = dataParser;
+        this.downloadTaskExecutor = downloadTaskExecutor;
     }
 
     /**
@@ -47,22 +52,63 @@ public class AppBody {
      * Only processAndSaveDatasets() handles database transactions.
      * Uses self-injection to ensure @Transactional annotation is properly applied via Spring AOP proxy.
      * 
+     * Processing is guaranteed to run even if download encounters errors, as long as some files were downloaded.
+     * 
+     * This method manually creates and manages a CompletableFuture instead of using @Async,
+     * which allows proper async execution and correct future completion tracking.
+     * 
      * @return CompletableFuture that completes when download and processing are finished
      */
-    @Async("downloadTaskExecutor")
     public CompletableFuture<Void> downloadDatasetsAsync() {
         log.info("Starting async dataset download process...");
-        try {
-            datasetDownloader.downloadFiles(OUTPUT_DIRECTORY);
-            log.info("Download completed. Starting data processing...");
-            // Use self-injected proxy to ensure @Transactional is applied
-            self.processAndSaveDatasets();
-            log.info("Async dataset download and processing completed successfully");
-            return CompletableFuture.completedFuture(null);
-        } catch (Exception e) {
-            log.error("Error during async dataset download", e);
-            return CompletableFuture.failedFuture(e);
-        }
+        
+        // Create a CompletableFuture that will be completed asynchronously
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        
+        // Execute the work asynchronously using the configured executor
+        downloadTaskExecutor.execute(() -> {
+            boolean downloadSucceeded = false;
+            Exception downloadError = null;
+            
+            try {
+                datasetDownloader.downloadFiles(OUTPUT_DIRECTORY);
+                downloadSucceeded = true;
+                log.info("Download completed successfully. Starting data processing...");
+            } catch (Exception e) {
+                downloadError = e;
+                log.warn("Download encountered errors, but will attempt to process any downloaded files: {}", e.getMessage());
+            }
+            
+            // Always attempt processing, even if download had errors
+            // This ensures that partially downloaded files are still processed
+            try {
+                log.info("Starting data processing...");
+                // Use self-injected proxy to ensure @Transactional is applied
+                self.processAndSaveDatasets();
+                log.info("Data processing completed successfully");
+                
+                if (downloadSucceeded) {
+                    log.info("Async dataset download and processing completed successfully");
+                    future.complete(null);
+                } else {
+                    log.warn("Processing completed, but download had errors. Some files may be missing.");
+                    // Still complete successfully if processing worked, even if download had issues
+                    future.complete(null);
+                }
+            } catch (Exception e) {
+                log.error("Error during data processing", e);
+                // If download also failed, combine errors
+                if (downloadError != null) {
+                    Exception combinedError = new RuntimeException("Both download and processing failed", e);
+                    combinedError.addSuppressed(downloadError);
+                    future.completeExceptionally(combinedError);
+                } else {
+                    future.completeExceptionally(e);
+                }
+            }
+        });
+        
+        return future;
     }
     
     /**
@@ -90,11 +136,17 @@ public class AppBody {
             return;
         }
 
+        log.info("Found {} files to process", files.length);
         int totalProcessed = 0;
         int totalSaved = 0;
+        int filesProcessed = 0;
+        int filesWithErrors = 0;
 
         for (File file : files) {
-            if (!file.isFile()) continue;
+            if (!file.isFile()) {
+                log.debug("Skipping non-file: {}", file.getName());
+                continue;
+            }
 
             try {
                 List<Dataset> datasets = new ArrayList<>();
@@ -106,6 +158,11 @@ public class AppBody {
                     datasets = dataParser.parseExcelFile(file);
                 } else {
                     log.debug("Skipping unsupported file type: {}", file.getName());
+                    continue;
+                }
+
+                if (datasets.isEmpty()) {
+                    log.debug("No records parsed from file: {}", file.getName());
                     continue;
                 }
 
@@ -132,18 +189,24 @@ public class AppBody {
                         totalSaved += fileSaved;
                     } catch (Exception e) {
                         log.error("Error batch saving datasets from file {}: {}", file.getName(), e.getMessage(), e);
+                        filesWithErrors++;
+                        // Continue processing other files even if this one failed
                     }
                 }
 
                 totalProcessed += datasets.size();
-                log.info("Processed file {}: {} records, {} saved", file.getName(), datasets.size(), fileSaved);
+                filesProcessed++;
+                log.info("Processed file {}: {} records parsed, {} saved to database", file.getName(), datasets.size(), fileSaved);
 
             } catch (Exception e) {
                 log.error("Error processing file {}: {}", file.getName(), e.getMessage(), e);
+                filesWithErrors++;
+                // Continue processing other files even if this one failed
             }
         }
 
-        log.info("Processing completed. Total processed: {}, Total saved: {}", totalProcessed, totalSaved);
+        log.info("Processing completed. Files processed: {}, Files with errors: {}, Total records processed: {}, Total records saved: {}", 
+                filesProcessed, filesWithErrors, totalProcessed, totalSaved);
     }
 
     private boolean isDuplicate(Dataset dataset) {
