@@ -3,7 +3,11 @@ package dataProcessors;
 import model.Dataset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import service.WebsiteUrlService;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -13,8 +17,14 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class DataParserTest {
+
+    @Mock
+    private WebsiteUrlService websiteUrlService;
 
     private DataParser dataParser;
 
@@ -23,7 +33,9 @@ class DataParserTest {
 
     @BeforeEach
     void setUp() {
-        dataParser = new DataParser();
+        dataParser = new DataParser(websiteUrlService);
+        // Mock website URL service to return null (no URL found)
+        when(websiteUrlService.getCompanyWebsiteUrl(anyString(), any(), any())).thenReturn(null);
     }
 
     @Test

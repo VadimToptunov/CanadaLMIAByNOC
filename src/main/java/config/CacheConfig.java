@@ -16,12 +16,18 @@ public class CacheConfig {
     @Bean
     @SuppressWarnings("null")
     public CacheManager cacheManager() {
-        CaffeineCacheManager cacheManager = new CaffeineCacheManager("statistics", "provinceList");
+        CaffeineCacheManager cacheManager = new CaffeineCacheManager(
+                "statistics", 
+                "provinceList", 
+                "nocCodeList",
+                "nocCodeWithTitles",
+                "provinceCounts"
+        );
         Caffeine<Object, Object> caffeine = Caffeine.newBuilder()
                 .initialCapacity(100)
-                .maximumSize(500)
-                .expireAfterWrite(30, TimeUnit.MINUTES)
-                .expireAfterAccess(10, TimeUnit.MINUTES)
+                .maximumSize(1000)
+                .expireAfterWrite(60, TimeUnit.MINUTES) // 1 hour for reference data
+                .expireAfterAccess(30, TimeUnit.MINUTES)
                 .recordStats();
         cacheManager.setCaffeine(caffeine);
         return cacheManager;

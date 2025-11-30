@@ -20,6 +20,23 @@ services:
     networks:
       - lmia-network
 
+  tor:
+    image: dperson/torproxy:latest
+    container_name: lmia-tor
+    ports:
+      - "9050:9050"
+    networks:
+      - lmia-network
+    restart: unless-stopped
+    # Tor takes time to establish circuits, so we use a longer start period
+    # The app will retry connections if Tor is not ready yet
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 3 bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9050' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
   app:
     build:
       context: .
@@ -33,10 +50,15 @@ services:
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       APP_DATA_AUTO_LOAD_ENABLED: "true"
+      APP_DOWNLOAD_USE_TOR: "true"
+      APP_DOWNLOAD_TOR_PROXY_HOST: "tor"
+      APP_DOWNLOAD_TOR_PROXY_PORT: "9050"
     ports:
       - "8080:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      tor:
         condition: service_healthy
     networks:
       - lmia-network

@@ -1,0 +1,46 @@
+# Prometheus configuration for LMIA Portal monitoring
+global:
+  scrape_interval: 15s      # How frequently to scrape targets
+  evaluation_interval: 15s  # How frequently to evaluate rules
+  external_labels:
+    cluster: 'lmia-portal'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093  # Uncomment if using Alertmanager
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "alerts.yml"
+
+# Scrape configurations
+scrape_configs:
+  # LMIA Portal application metrics
+  - job_name: 'lmia-portal'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['app:8080']  # Docker service name
+        labels:
+          application: 'lmia-portal'
+          service: 'backend'
+    
+    # Scrape timeout
+    scrape_timeout: 10s
+    
+    # Relabeling
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'lmia-portal:8080'
+
+  # PostgreSQL metrics (if postgres_exporter is available)
+  # - job_name: 'postgres'
+  #   static_configs:
+  #     - targets: ['postgres-exporter:9187']
+  #       labels:
+  #         database: 'lmia_db'
+

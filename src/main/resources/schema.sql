@@ -28,3 +28,12 @@ CREATE INDEX IF NOT EXISTS idx_date ON lmia_datasets(decision_date);
 CREATE INDEX IF NOT EXISTS idx_status ON lmia_datasets(status);
 CREATE INDEX IF NOT EXISTS idx_employer_lower ON lmia_datasets(LOWER(employer));
 
+-- Composite indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_employer_status ON lmia_datasets(employer, status);
+CREATE INDEX IF NOT EXISTS idx_noc_status ON lmia_datasets(noc_code, status);
+CREATE INDEX IF NOT EXISTS idx_province_status ON lmia_datasets(province, status);
+CREATE INDEX IF NOT EXISTS idx_date_status ON lmia_datasets(decision_date, status);
+
+-- Index for website URL lookups
+CREATE INDEX IF NOT EXISTS idx_website_url ON lmia_datasets(website_url) WHERE website_url IS NOT NULL;
+

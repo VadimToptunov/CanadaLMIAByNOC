@@ -116,14 +116,23 @@ public class DataParser {
                 }
                 
                 // Parse data row
-                try (CSVParser rowParser = CSVFormat.DEFAULT.parse(new StringReader(line))) {
-                    CSVRecord record = rowParser.iterator().next();
-                    Dataset dataset = parseRecord(record, structure.headers, sourceFileName, currentProvince);
-                    if (dataset != null) {
-                        datasets.add(dataset);
+                // Use CSVFormat with headers to enable access by name
+                if (structure.headers != null && !structure.headers.isEmpty()) {
+                    try {
+                        CSVFormat csvFormat = CSVFormat.DEFAULT.builder()
+                                .setHeader(structure.headers.toArray(new String[0]))
+                                .setSkipHeaderRecord(false)
+                                .build();
+                        try (CSVParser rowParser = csvFormat.parse(new StringReader(line))) {
+                            CSVRecord record = rowParser.iterator().next();
+                            Dataset dataset = parseRecord(record, structure.headers, sourceFileName, currentProvince);
+                            if (dataset != null) {
+                                datasets.add(dataset);
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.debug("Error parsing line {} in file {}: {}", i + 1, sourceFileName, e.getMessage());
                     }
-                } catch (Exception e) {
-                    log.debug("Error parsing line {} in file {}: {}", i + 1, sourceFileName, e.getMessage());
                 }
             }
             

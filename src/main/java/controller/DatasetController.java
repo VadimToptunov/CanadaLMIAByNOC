@@ -24,10 +24,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import repository.DatasetRepository;
 import service.ExportService;
+import service.MetricsService;
+import service.ReferenceDataService;
 
 import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -40,6 +43,8 @@ public class DatasetController {
 
     private final DatasetRepository datasetRepository;
     private final ExportService exportService;
+    private final MetricsService metricsService;
+    private final ReferenceDataService referenceDataService;
 
     @Operation(
             summary = "Search datasets with filters",
@@ -59,40 +64,60 @@ public class DatasetController {
     @GetMapping("/search")
     public ResponseEntity<ApiResponse<PagedResponse<DatasetDTO>>> searchDatasets(
             @Valid SearchRequest request) {
-
-        Pageable pageable = PageRequest.of(request.getPage(), request.getSize());
-        String statusString = null;
+        io.micrometer.core.instrument.Timer.Sample sample = metricsService.startSearchTimer();
+        String searchType = determineSearchType(request);
         
-        if (request.getStatus() != null && !request.getStatus().isEmpty()) {
-            try {
-                Dataset.DecisionStatus.valueOf(request.getStatus().toUpperCase());
-                statusString = request.getStatus().toUpperCase();
-            } catch (IllegalArgumentException e) {
-                log.warn("Invalid status parameter: {}", request.getStatus());
-                return ResponseEntity.badRequest()
-                        .body(ApiResponse.error("Invalid status parameter. Use APPROVED or DENIED"));
+        try {
+            Pageable pageable = PageRequest.of(request.getPage(), request.getSize());
+            String statusString = null;
+            
+            if (request.getStatus() != null && !request.getStatus().isEmpty()) {
+                try {
+                    Dataset.DecisionStatus.valueOf(request.getStatus().toUpperCase());
+                    statusString = request.getStatus().toUpperCase();
+                } catch (IllegalArgumentException e) {
+                    log.warn("Invalid status parameter: {}", request.getStatus());
+                    metricsService.recordSearchError(searchType, "invalid_status");
+                    return ResponseEntity.badRequest()
+                            .body(ApiResponse.error("Invalid status parameter. Use APPROVED or DENIED"));
+                }
             }
+
+            long startTime = System.currentTimeMillis();
+            Page<Dataset> results = datasetRepository.searchDatasets(
+                    request.getEmployer(), request.getNocCode(), request.getProvince(), 
+                    statusString, request.getStartDate(), request.getEndDate(), pageable);
+            metricsService.recordDatabaseQuery("search", System.currentTimeMillis() - startTime);
+
+            List<DatasetDTO> dtoList = results.getContent().stream()
+                    .map(DatasetDTO::fromEntity)
+                    .collect(Collectors.toList());
+
+            PagedResponse<DatasetDTO> pagedResponse = PagedResponse.of(
+                    dtoList,
+                    results.getTotalElements(),
+                    results.getTotalPages(),
+                    results.getNumber(),
+                    results.getSize(),
+                    results.hasNext(),
+                    results.hasPrevious()
+            );
+
+            metricsService.recordSearch(searchType);
+            return ResponseEntity.ok(ApiResponse.success(pagedResponse));
+        } catch (Exception e) {
+            metricsService.recordSearchError(searchType, e.getClass().getSimpleName());
+            throw e;
+        } finally {
+            metricsService.stopSearchTimer(sample, searchType);
         }
-
-        Page<Dataset> results = datasetRepository.searchDatasets(
-                request.getEmployer(), request.getNocCode(), request.getProvince(), 
-                statusString, request.getStartDate(), request.getEndDate(), pageable);
-
-        List<DatasetDTO> dtoList = results.getContent().stream()
-                .map(DatasetDTO::fromEntity)
-                .collect(Collectors.toList());
-
-        PagedResponse<DatasetDTO> pagedResponse = PagedResponse.of(
-                dtoList,
-                results.getTotalElements(),
-                results.getTotalPages(),
-                results.getNumber(),
-                results.getSize(),
-                results.hasNext(),
-                results.hasPrevious()
-        );
-
-        return ResponseEntity.ok(ApiResponse.success(pagedResponse));
+    }
+    
+    private String determineSearchType(SearchRequest request) {
+        if (request.getEmployer() != null) return "employer";
+        if (request.getNocCode() != null) return "noc";
+        if (request.getProvince() != null) return "province";
+        return "general";
     }
 
     @GetMapping("/search/legacy")
@@ -267,6 +292,49 @@ public class DatasetController {
             log.error("Error exporting to Excel", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @Operation(
+            summary = "Get list of provinces",
+            description = "Returns a list of all provinces/territories that have data in the database. Results are cached for 1 hour."
+    )
+    @GetMapping("/provinces")
+    public ResponseEntity<ApiResponse<List<String>>> getProvinces() {
+        List<String> provinces = referenceDataService.getProvinces();
+        return ResponseEntity.ok(ApiResponse.success(provinces));
+    }
+
+    @Operation(
+            summary = "Get list of NOC codes",
+            description = "Returns a list of all NOC codes that have data in the database. Results are cached for 1 hour."
+    )
+    @GetMapping("/noc-codes")
+    public ResponseEntity<ApiResponse<List<String>>> getNocCodes() {
+        List<String> nocCodes = referenceDataService.getNocCodes();
+        return ResponseEntity.ok(ApiResponse.success(nocCodes));
+    }
+
+    @Operation(
+            summary = "Get NOC codes with titles",
+            description = "Returns a list of NOC codes with their titles. Results are cached for 1 hour."
+    )
+    @GetMapping("/noc-codes/with-titles")
+    public ResponseEntity<ApiResponse<List<Map<String, String>>>> getNocCodesWithTitles() {
+        List<ReferenceDataService.NocCodeInfo> nocCodes = referenceDataService.getNocCodesWithTitles();
+        List<Map<String, String>> result = nocCodes.stream()
+                .map(info -> Map.of("code", info.getCode(), "title", info.getTitle()))
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
+    @Operation(
+            summary = "Get province record counts",
+            description = "Returns count of records per province. Results are cached for 30 minutes."
+    )
+    @GetMapping("/provinces/counts")
+    public ResponseEntity<ApiResponse<Map<String, Long>>> getProvinceCounts() {
+        Map<String, Long> counts = referenceDataService.getProvinceCounts();
+        return ResponseEntity.ok(ApiResponse.success(counts));
     }
 }
 

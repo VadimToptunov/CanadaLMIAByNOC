@@ -1,0 +1,109 @@
+# Alerting rules for LMIA Portal
+
+groups:
+  - name: lmia_portal_alerts
+    interval: 30s
+    rules:
+      # High error rate alert
+      - alert: HighSearchErrorRate
+        expr: rate(lmia_search_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "High search error rate detected"
+          description: "Search error rate is {{ $value }} errors/sec (threshold: 0.1)"
+
+      # Slow search queries
+      - alert: SlowSearchQueries
+        expr: histogram_quantile(0.95, rate(lmia_dataset_search_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: search
+        annotations:
+          summary: "Slow search queries detected"
+          description: "95th percentile search time is {{ $value }}s (threshold: 2s)"
+
+      # Database query performance
+      - alert: SlowDatabaseQueries
+        expr: histogram_quantile(0.95, rate(lmia_database_query_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile database query time is {{ $value }}s (threshold: 1s)"
+
+      # High cache miss rate
+      - alert: HighCacheMissRate
+        expr: |
+          rate(lmia_cache_operations_total{result="miss"}[5m]) / 
+          (rate(lmia_cache_operations_total{result="hit"}[5m]) + rate(lmia_cache_operations_total{result="miss"}[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: info
+          component: cache
+        annotations:
+          summary: "High cache miss rate"
+          description: "Cache miss rate is {{ $value | humanizePercentage }} (threshold: 50%)"
+
+      # Application down
+      - alert: ApplicationDown
+        expr: up{job="lmia-portal"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: availability
+        annotations:
+          summary: "LMIA Portal application is down"
+          description: "Application has been down for more than 1 minute"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: memory
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # Database connection pool exhaustion
+      - alert: DatabaseConnectionPoolExhausted
+        expr: hikaricp_connections_active / hikaricp_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # File download failures
+      - alert: HighFileDownloadFailureRate
+        expr: rate(lmia_file_downloads_errors_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: download
+        annotations:
+          summary: "High file download failure rate"
+          description: "File download error rate is {{ $value }} errors/sec (threshold: 0.05)"
+
+      # Website URL lookup failures
+      - alert: HighWebsiteUrlLookupFailureRate
+        expr: |
+          rate(lmia_website_url_not_found_total[5m]) / 
+          (rate(lmia_website_url_found_total[5m]) + rate(lmia_website_url_not_found_total[5m])) > 0.8
+        for: 10m
+        labels:
+          severity: info
+          component: website_lookup
+        annotations:
+          summary: "High website URL lookup failure rate"
+          description: "Website URL lookup failure rate is {{ $value | humanizePercentage }} (threshold: 80%)"
+

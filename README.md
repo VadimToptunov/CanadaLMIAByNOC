@@ -11,7 +11,9 @@ Web application for searching historical and relevant information about companie
 - **Date Filtering**: Search for decisions within a specific time range
 - **Statistics**: Overall statistics for all records in the database
 - **Data Export**: Export search results to CSV or Excel formats
+- **Company Website Links**: Automatic discovery and storage of company website URLs
 - **API Documentation**: Interactive Swagger/OpenAPI documentation
+- **Metrics & Monitoring**: Prometheus metrics and performance monitoring
 
 ## 🛠 Technologies
 
@@ -23,7 +25,8 @@ Web application for searching historical and relevant information about companie
 - **API Documentation**: SpringDoc OpenAPI (Swagger)
 - **Caching**: Caffeine
 - **Connection Pooling**: HikariCP
-- **Monitoring**: Spring Boot Actuator
+- **Monitoring**: Spring Boot Actuator, Micrometer, Prometheus
+- **Metrics**: Custom business metrics for search, processing, and website lookups
 
 ## 📋 Requirements
 
@@ -62,6 +65,7 @@ The application will be available at: `http://localhost:8080`
 **Docker Compose includes:**
 - PostgreSQL 15 database (automatically configured)
 - Spring Boot application
+- Tor SOCKS proxy (for bypassing IP blocks during data downloads)
 - Automatic health checks
 - Volume persistence for database data
 
@@ -69,6 +73,9 @@ The application will be available at: `http://localhost:8080`
 - `SPRING_DATASOURCE_URL`: Database connection URL
 - `SPRING_DATASOURCE_USERNAME`: Database username (default: postgres)
 - `SPRING_DATASOURCE_PASSWORD`: Database password (default: postgres)
+- `APP_DOWNLOAD_USE_TOR`: Enable Tor proxy for downloads (default: true in Docker)
+- `APP_DOWNLOAD_TOR_PROXY_HOST`: Tor proxy hostname (default: tor)
+- `APP_DOWNLOAD_TOR_PROXY_PORT`: Tor proxy port (default: 9050)
 
 ### Option 2: Manual Setup
 
@@ -234,6 +241,71 @@ The documentation includes:
 - Usage examples
 - Interactive API testing
 
+## 📊 Metrics & Monitoring
+
+The application exposes comprehensive metrics through Spring Boot Actuator:
+
+### Metrics Endpoints
+
+- **Prometheus**: `http://localhost:8080/actuator/prometheus`
+- **Metrics**: `http://localhost:8080/actuator/metrics`
+- **Health**: `http://localhost:8080/actuator/health`
+- **Info**: `http://localhost:8080/actuator/info`
+
+### Available Metrics
+
+#### Search Metrics
+- `lmia.search.requests` - Total search requests (tagged by type: employer, noc, province, general)
+- `lmia.search.errors` - Search errors (tagged by type and error)
+- `lmia.dataset.search` - Search execution time (histogram with percentiles)
+
+#### Database Metrics
+- `lmia.database.query` - Database query execution time (tagged by query type)
+- HikariCP connection pool metrics (active, idle, total connections)
+
+#### Data Processing Metrics
+- `lmia.dataset.processed` - Number of datasets processed (tagged by file type)
+- `lmia.dataset.processing` - File processing time
+- `lmia.file.downloads` - File download counter
+- `lmia.file.downloads.errors` - File download errors
+- `lmia.file.download` - File download time
+
+#### Website URL Metrics
+- `lmia.website.url.found` - Website URLs successfully found
+- `lmia.website.url.not_found` - Website URLs not found
+- `lmia.website.url.lookup` - Website URL lookup time (tagged by found/not found)
+
+#### Cache Metrics
+- `lmia.cache.operations` - Cache hit/miss operations (tagged by cache name)
+
+#### HTTP Metrics
+- `http.server.requests` - HTTP request metrics with percentiles and SLA thresholds
+
+### Monitoring Setup
+
+For detailed monitoring setup instructions, see [MONITORING_SETUP.md](MONITORING_SETUP.md).
+
+Quick start:
+
+To set up Prometheus + Grafana:
+
+1. **Prometheus Configuration** (`prometheus.yml`):
+```yaml
+scrape_configs:
+  - job_name: 'lmia-portal'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+2. **Key Metrics to Monitor**:
+   - Search latency (p50, p95, p99)
+   - Error rates
+   - Database query performance
+   - Cache hit rates
+   - Website URL lookup success rate
+   - File processing throughput
+
 ## 🔐 Security
 
 - **Authentication**: Basic authentication for admin endpoints
@@ -247,8 +319,13 @@ The documentation includes:
 - **Connection Pooling**: HikariCP with 20 max connections
 - **Batch Operations**: Optimized batch inserts for better performance
 - **Caching**: Caffeine cache for statistics (30 minutes TTL)
-- **Database Indexes**: Optimized indexes for common queries
+- **Database Indexes**: 
+  - Single-column indexes for common fields
+  - Composite indexes for frequent query patterns (employer+status, noc+status, etc.)
+  - Partial indexes for optimized lookups
 - **JPA Optimizations**: Batch inserts and updates enabled
+- **Async Processing**: Parallel file downloads with configurable thread pool
+- **Query Optimization**: Native queries optimized for PostgreSQL
 
 ## 🧪 Testing
 
@@ -274,20 +351,69 @@ CanadaLMIAByNOC/
 │   │   │   │   ├── AppMain.java          # Application entry point
 │   │   │   │   └── AppBody.java          # Main service
 │   │   │   ├── controller/               # REST controllers
+│   │   │   │   ├── DatasetController.java
+│   │   │   │   └── AdminController.java
 │   │   │   ├── model/                     # JPA entities
+│   │   │   │   └── Dataset.java
 │   │   │   ├── repository/                # Spring Data repositories
+│   │   │   │   └── DatasetRepository.java
 │   │   │   ├── service/                    # Business services
+│   │   │   │   ├── ExportService.java
+│   │   │   │   ├── WebsiteUrlService.java
+│   │   │   │   ├── CompanyWebsiteService.java
+│   │   │   │   └── MetricsService.java
 │   │   │   ├── dto/                        # Data transfer objects
+│   │   │   │   ├── DatasetDTO.java
+│   │   │   │   ├── SearchRequest.java
+│   │   │   │   ├── PagedResponse.java
+│   │   │   │   └── ApiResponse.java
 │   │   │   ├── config/                     # Configuration classes
+│   │   │   │   ├── SecurityConfig.java
+│   │   │   │   ├── AsyncConfig.java
+│   │   │   │   ├── CacheConfig.java
+│   │   │   │   ├── MetricsConfig.java
+│   │   │   │   ├── ScheduledTasksConfig.java
+│   │   │   │   └── ...
 │   │   │   ├── exception/                 # Exception handlers
+│   │   │   │   └── GlobalExceptionHandler.java
 │   │   │   └── dataProcessors/             # Data parsers
+│   │   │       ├── DataParser.java
+│   │   │       └── DatasetDownloader.java
 │   │   └── resources/
 │   │       ├── static/
 │   │       │   └── index.html            # Web interface
-│   │       └── application.properties    # Configuration
+│   │       ├── application.properties    # Configuration
+│   │       └── schema.sql                # Database schema
 │   └── test/
 │       └── java/                          # Test classes
+│           ├── controller/
+│           ├── service/
+│           └── dataProcessors/
 └── pom.xml
+```
+
+## 🌐 Company Website URLs
+
+The application automatically discovers and stores company website URLs:
+
+- **Automatic Discovery**: Searches for company websites using DuckDuckGo and Google APIs
+- **Database Storage**: Found URLs are stored in the database and reused
+- **Fallback**: If no URL is found, generates a Google search link
+- **Scheduled Updates**: Optional periodic task to find URLs for companies without websites
+
+### Configuration
+
+Enable automatic website URL discovery:
+
+```properties
+# Enable automatic website URL updates
+app.website-url-update.enabled=true
+
+# Schedule: Every Sunday at 4:00 AM (default)
+app.website-url-update.cron=0 0 4 * * SUN
+
+# Number of companies to process per run
+app.website-url-update.batch-size=50
 ```
 
 ## 🎯 Features Implemented
@@ -303,6 +429,10 @@ CanadaLMIAByNOC/
 - ✅ Error logging with context
 - ✅ Performance monitoring (Actuator)
 - ✅ Health checks
+- ✅ Prometheus metrics export
+- ✅ Custom business metrics (search operations, data processing, website lookups)
+- ✅ Database query performance tracking
+- ✅ Method-level timing with @Timed annotation
 
 ### Performance
 - ✅ Connection pooling (HikariCP)
@@ -314,6 +444,9 @@ CanadaLMIAByNOC/
 - ✅ Unit tests for core components
 - ✅ Integration tests for REST API
 - ✅ Test configuration with H2 database
+- ✅ Metrics service tests
+- ✅ Data parser tests
+- ✅ Downloader tests
 
 ### API Documentation
 - ✅ Swagger/OpenAPI documentation
@@ -325,6 +458,34 @@ CanadaLMIAByNOC/
 - Date parsing from filenames may be inaccurate for some formats
 - Some CSV files may have varying header structures
 - Large Excel files may process slowly
+- Website URL discovery depends on external APIs (DuckDuckGo, Google) and may be rate-limited
+
+## 🔧 Recent Improvements
+
+### Metrics & Monitoring (Latest)
+- ✅ Added Micrometer with Prometheus support
+- ✅ Custom business metrics for all major operations
+- ✅ Database query performance tracking
+- ✅ Method-level timing annotations
+- ✅ Comprehensive error tracking
+
+### Database Optimizations
+- ✅ Composite indexes for common query patterns
+- ✅ Partial indexes for optimized lookups
+- ✅ Batch operations for bulk inserts
+- ✅ Connection pool monitoring
+
+### Website URL Discovery
+- ✅ Automatic company website URL discovery
+- ✅ Database storage of found URLs
+- ✅ Scheduled background updates
+- ✅ Fallback to Google search links
+
+### Performance Enhancements
+- ✅ Async file downloads with configurable thread pool
+- ✅ Optimized executor usage for parallel operations
+- ✅ Query optimization for PostgreSQL
+- ✅ Enhanced caching strategies
 
 ## 📝 License
 

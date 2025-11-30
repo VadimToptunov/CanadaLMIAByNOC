@@ -99,5 +99,25 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
            "ORDER BY d.employer",
            nativeQuery = true)
     List<String> findCompaniesWithoutWebsiteUrl();
+    
+    // Optimized queries for reference data (cached)
+    @Query(value = "SELECT DISTINCT d.province FROM lmia_datasets d ORDER BY d.province",
+           nativeQuery = true)
+    List<String> findDistinctProvinces();
+    
+    @Query(value = "SELECT DISTINCT d.noc_code FROM lmia_datasets d ORDER BY d.noc_code",
+           nativeQuery = true)
+    List<String> findDistinctNocCodes();
+    
+    @Query(value = "SELECT DISTINCT d.noc_code, d.noc_title FROM lmia_datasets d " +
+           "WHERE d.noc_code IS NOT NULL AND d.noc_title IS NOT NULL " +
+           "ORDER BY d.noc_code",
+           nativeQuery = true)
+    List<Object[]> findDistinctNocCodesWithTitles();
+    
+    @Query(value = "SELECT d.province, COUNT(*) as count FROM lmia_datasets d " +
+           "GROUP BY d.province ORDER BY d.province",
+           nativeQuery = true)
+    List<Object[]> findProvinceCounts();
 }
 

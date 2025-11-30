@@ -1,29 +1,48 @@
-# Compiled class files
-target/
-*.class
-
-# Log files
-*.log
-logfile.log
-
-# IDE files
+# IDE
 .idea/
 *.iml
+*.iws
+*.ipr
 .vscode/
 *.swp
 *.swo
 *~
 
-# OS files
+# Build
+target/
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# OS
 .DS_Store
 Thumbs.db
 
-# Application properties with sensitive data
-src/main/resources/application-local.properties
+# Docker
+*.log
+prometheus_data/
+grafana_data/
+alertmanager_data/
 
-# Database files
-*.db
-*.sqlite
+# Application logs
+*.log
+*.log.*
+*.log.error
+*.log.json
 
-# Downloaded datasets
-savedDatasets/
+# Environment
+.env
+.env.local
+
+# Data files
+data/
+downloads/
+*.csv
+*.xlsx
+*.xls
+
+# Temporary files
+tmp/
+temp/
