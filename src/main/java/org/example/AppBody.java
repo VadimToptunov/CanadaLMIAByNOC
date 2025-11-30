@@ -1,7 +1,7 @@
 package org.example;
 
-import dataProcessors.DataParser;
-import dataProcessors.DatasetDownloader;
+import nocservice.dataProcessors.DataParser;
+import nocservice.dataProcessors.DatasetDownloader;
 import lombok.extern.slf4j.Slf4j;
 import model.Dataset;
 import org.springframework.beans.factory.annotation.Autowired;

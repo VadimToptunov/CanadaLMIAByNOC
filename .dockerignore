@@ -9,5 +9,7 @@ savedDatasets/
 .DS_Store
 *.md
 !README.md
+!MONITORING_SETUP.md
+!README_MONITORING.md
 LICENSE
 
