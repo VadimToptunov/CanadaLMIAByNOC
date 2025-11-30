@@ -197,6 +197,30 @@
             background: #f8f9fa;
         }
 
+        .website-link {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s;
+        }
+
+        .website-link:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+
+        .search-link {
+            color: #888;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .search-link:hover {
+            color: #667eea;
+            text-decoration: underline;
+        }
+
         .status-badge {
             padding: 5px 12px;
             border-radius: 20px;
@@ -359,6 +383,7 @@
                     <thead>
                         <tr>
                             <th>Company</th>
+                            <th>Website</th>
                             <th>Province</th>
                             <th>City</th>
                             <th>NOC Code</th>
@@ -423,7 +448,7 @@
             const resultsCount = document.getElementById('resultsCount');
             
             resultsPanel.style.display = 'block';
-            resultsBody.innerHTML = '<tr><td colspan="9"><div class="loading"><div class="spinner"></div>Loading results...</div></td></tr>';
+            resultsBody.innerHTML = '<tr><td colspan="10"><div class="loading"><div class="spinner"></div>Loading results...</div></td></tr>';
 
             try {
                 const response = await fetch(`/api/datasets/search?${params.toString()}`);
@@ -431,8 +456,8 @@
                 
                 // Check if response is wrapped in ApiResponse structure
                 if (!apiResponse.success && apiResponse.message) {
-                    // Error response
-                    resultsBody.innerHTML = `<tr><td colspan="9"><div class="error">${apiResponse.message}</div></td></tr>`;
+                    // Error response - escape HTML to prevent XSS
+                    resultsBody.innerHTML = `<tr><td colspan="10"><div class="error">${escapeHtml(apiResponse.message)}</div></td></tr>`;
                     resultsCount.textContent = 'Error';
                     return;
                 }
@@ -448,12 +473,13 @@
                     displayResults(data.content);
                     displayPagination(data);
                 } else {
-                    resultsBody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No results found. Try adjusting your search criteria.</td></tr>';
+                    resultsBody.innerHTML = '<tr><td colspan="10" style="text-align: center; padding: 40px;">No results found. Try adjusting your search criteria.</td></tr>';
                     resultsCount.textContent = 'No results found';
                     document.getElementById('pagination').innerHTML = '';
                 }
             } catch (error) {
-                resultsBody.innerHTML = `<tr><td colspan="9"><div class="error">Error loading results: ${error.message}</div></td></tr>`;
+                // Escape HTML to prevent XSS from error messages
+                resultsBody.innerHTML = `<tr><td colspan="10"><div class="error">Error loading results: ${escapeHtml(error.message || 'Unknown error')}</div></td></tr>`;
                 console.error('Search error:', error);
             }
         }
@@ -464,16 +490,27 @@
 
             results.forEach(result => {
                 const row = document.createElement('tr');
+                // Generate website link - show real website or search link
+                let websiteCell = 'N/A';
+                if (result.websiteUrl) {
+                    const isSearchLink = result.websiteUrl.includes('google.com/search');
+                    const linkText = isSearchLink ? '🔍 Search' : '🌐 Website';
+                    const linkTitle = isSearchLink 
+                        ? `Search for ${escapeHtml(result.employer || 'company')} on Google`
+                        : `Visit ${escapeHtml(result.employer || 'company')} website`;
+                    websiteCell = `<a href="${escapeHtml(result.websiteUrl)}" target="_blank" rel="noopener noreferrer" title="${linkTitle}" class="${isSearchLink ? 'search-link' : 'website-link'}">${linkText}</a>`;
+                }
                 row.innerHTML = `
                     <td>${escapeHtml(result.employer || 'N/A')}</td>
+                    <td>${websiteCell}</td>
                     <td>${escapeHtml(result.province || 'N/A')}</td>
                     <td>${escapeHtml(result.city || 'N/A')}</td>
                     <td>${escapeHtml(result.nocCode || 'N/A')}</td>
                     <td>${escapeHtml(result.nocTitle || 'N/A')}</td>
                     <td>${escapeHtml(result.stream || 'N/A')}</td>
                     <td>${result.positionsApproved || 0}</td>
-                    <td><span class="status-badge status-${result.status === 'APPROVED' ? 'approved' : 'denied'}">${result.status || 'N/A'}</span></td>
-                    <td>${result.decisionDate || 'N/A'}</td>
+                    <td><span class="status-badge status-${result.status === 'APPROVED' ? 'approved' : 'denied'}">${escapeHtml(result.status || 'N/A')}</span></td>
+                    <td>${escapeHtml(result.decisionDate || 'N/A')}</td>
                 `;
                 tbody.appendChild(row);
             });

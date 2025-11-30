@@ -23,6 +23,7 @@ public class DatasetDTO {
     private String status;
     private LocalDate decisionDate;
     private String sourceFile;
+    private String websiteUrl;
 
     public static DatasetDTO fromEntity(Dataset dataset) {
         return new DatasetDTO(
@@ -37,7 +38,8 @@ public class DatasetDTO {
                 dataset.getPositionsApproved(),
                 dataset.getStatus().name(),
                 dataset.getDecisionDate(),
-                dataset.getSourceFile()
+                dataset.getSourceFile(),
+                dataset.getWebsiteUrl()
         );
     }
 }

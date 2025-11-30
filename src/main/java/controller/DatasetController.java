@@ -61,11 +61,12 @@ public class DatasetController {
             @Valid SearchRequest request) {
 
         Pageable pageable = PageRequest.of(request.getPage(), request.getSize());
-        Dataset.DecisionStatus decisionStatus = null;
+        String statusString = null;
         
         if (request.getStatus() != null && !request.getStatus().isEmpty()) {
             try {
-                decisionStatus = Dataset.DecisionStatus.valueOf(request.getStatus().toUpperCase());
+                Dataset.DecisionStatus.valueOf(request.getStatus().toUpperCase());
+                statusString = request.getStatus().toUpperCase();
             } catch (IllegalArgumentException e) {
                 log.warn("Invalid status parameter: {}", request.getStatus());
                 return ResponseEntity.badRequest()
@@ -75,7 +76,7 @@ public class DatasetController {
 
         Page<Dataset> results = datasetRepository.searchDatasets(
                 request.getEmployer(), request.getNocCode(), request.getProvince(), 
-                decisionStatus, request.getStartDate(), request.getEndDate(), pageable);
+                statusString, request.getStartDate(), request.getEndDate(), pageable);
 
         List<DatasetDTO> dtoList = results.getContent().stream()
                 .map(DatasetDTO::fromEntity)

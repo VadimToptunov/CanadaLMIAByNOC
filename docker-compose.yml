@@ -24,12 +24,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/arm64
     container_name: lmia-app
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/lmia_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      APP_DATA_AUTO_LOAD_ENABLED: "true"
     ports:
       - "8080:8080"
     depends_on:

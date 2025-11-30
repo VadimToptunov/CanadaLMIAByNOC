@@ -2,11 +2,16 @@ package dataProcessors;
 
 import io.restassured.response.Response;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import static io.restassured.RestAssured.baseURI;
 import static io.restassured.RestAssured.given;
@@ -14,6 +19,12 @@ import static io.restassured.RestAssured.given;
 @Slf4j
 @Component
 public class DatasetDownloader {
+
+    private final Executor downloadTaskExecutor;
+
+    public DatasetDownloader(@Qualifier("downloadTaskExecutor") Executor downloadTaskExecutor) {
+        this.downloadTaskExecutor = downloadTaskExecutor;
+    }
 
     Map<String, String> createHeaders() {
         Map<String, String> headers = new TreeMap<>();
@@ -56,29 +67,69 @@ public class DatasetDownloader {
         }
         
         try {
-            List<LinkedHashMap<String, Object>> listOfResults = response.jsonPath().get("result" + ".results[0].resources");
-            log.debug(String.valueOf(listOfResults));
-            if (listOfResults != null) {
-                for (LinkedHashMap<String, Object> r : listOfResults) {
-                    Object nameObj = r.get("name");
-                    Object urlObj = r.get("url");
-                    
-                    // Null check for name and url fields
-                    if (nameObj == null || urlObj == null) {
-                        log.debug("Skipping resource with missing name or url field");
+            // Get all results from the API response
+            List<LinkedHashMap<String, Object>> results = response.jsonPath().get("result.results");
+            log.debug("Found {} datasets in API response", results != null ? results.size() : 0);
+            
+            if (results != null) {
+                for (LinkedHashMap<String, Object> dataset : results) {
+                    // Get resources from each dataset
+                    Object resourcesObj = dataset.get("resources");
+                    if (resourcesObj == null) {
                         continue;
                     }
                     
-                    String name = nameObj.toString();
-                    String lcase = name.toLowerCase();
-                    // Filter for English NOC positive datasets only
-                    // The name already contains "en", so we don't need additional URL filtering
-                    if (lcase.contains("national occupational classification (noc)") && 
-                        lcase.contains("positive") && 
-                        lcase.contains("en")) {
-                        log.debug(String.format("File name is : %s", name));
-                        String urlString = urlObj.toString();
-                        urls.add(urlString);
+                    List<LinkedHashMap<String, Object>> resources;
+                    if (resourcesObj instanceof List) {
+                        @SuppressWarnings("unchecked")
+                        List<LinkedHashMap<String, Object>> resourcesList = (List<LinkedHashMap<String, Object>>) resourcesObj;
+                        resources = resourcesList;
+                    } else {
+                        continue;
+                    }
+                    
+                    if (resources != null) {
+                        for (LinkedHashMap<String, Object> r : resources) {
+                            Object nameObj = r.get("name");
+                            Object urlObj = r.get("url");
+                            Object formatObj = r.get("format");
+                            
+                            // Null check for name and url fields
+                            if (nameObj == null || urlObj == null) {
+                                log.debug("Skipping resource with missing name or url field");
+                                continue;
+                            }
+                            
+                            String name = nameObj.toString();
+                            String format = formatObj != null ? formatObj.toString().toUpperCase() : "";
+                            String lcase = name.toLowerCase();
+                            String urlString = urlObj.toString().toLowerCase();
+                            
+                            // Filter for CSV/Excel files related to LMIA/NOC, English only
+                            // Check if it's a data file (CSV, Excel, or XLS) and contains relevant keywords
+                            boolean isDataFile = format.equals("CSV") || format.equals("XLSX") || format.equals("XLS") ||
+                                               lcase.endsWith(".csv") || lcase.endsWith(".xlsx") || lcase.endsWith(".xls") ||
+                                               urlString.endsWith(".csv") || urlString.endsWith(".xlsx") || urlString.endsWith(".xls");
+                            
+                            // Check for English (must contain "en" and NOT contain French indicators)
+                            // Exclude French files: check for "_fr", "/fr/", or "_f" before file extension (e.g., "file_f.csv")
+                            // Also check for files ending with "_f." before extension
+                            boolean hasFrenchIndicator = lcase.contains("_fr") || urlString.contains("_fr") || 
+                                                         urlString.contains("/fr/") ||
+                                                         (lcase.contains("_f.") && (lcase.endsWith(".csv") || lcase.endsWith(".xlsx") || lcase.endsWith(".xls"))) ||
+                                                         (urlString.contains("_f.") && (urlString.endsWith(".csv") || urlString.endsWith(".xlsx") || urlString.endsWith(".xls")));
+                            boolean isEnglish = (lcase.contains("en") || urlString.contains("_en") || urlString.contains("/en/")) &&
+                                              !hasFrenchIndicator;
+                            
+                            // Check if relevant to LMIA/NOC/TFWP
+                            boolean isRelevant = (lcase.contains("noc") || lcase.contains("lmia") || lcase.contains("tfwp") || 
+                                                 urlString.contains("noc") || urlString.contains("lmia") || urlString.contains("tfwp"));
+                            
+                            if (isDataFile && isEnglish && isRelevant) {
+                                log.info("Found file to download: {} (format: {})", name, format);
+                                urls.add(urlObj.toString());
+                            }
+                        }
                     }
                 }
             }
@@ -105,6 +156,12 @@ public class DatasetDownloader {
         }
     }
 
+    /**
+     * Downloads files asynchronously and in parallel for improved performance.
+     * Multiple files are downloaded concurrently using CompletableFuture.
+     * 
+     * @param outputDirectory Directory where files will be saved
+     */
     public void downloadFiles(File outputDirectory) {
         if (!outputDirectory.exists()) {
             boolean created = outputDirectory.mkdirs();
@@ -115,39 +172,82 @@ public class DatasetDownloader {
         }
         
         List<String> urls = getCsvFilesLinks();
-        log.info("Found {} files to download", urls.size());
+        log.info("Found {} files to download. Starting parallel download...", urls.size());
         
-        for (String url : urls) {
-            try {
-                Response response = given().when().get(url);
-                
-                // Check HTTP status code before processing
-                int statusCode = response.getStatusCode();
-                if (statusCode < 200 || statusCode >= 300) {
-                    log.warn("HTTP error {} when downloading file from URL: {}. Skipping.", statusCode, url);
-                    continue;
-                }
-                
-                byte[] fileContents = response.asByteArray();
-                String fileName = url.substring(url.lastIndexOf('/') + 1);
-                // Clean filename from query parameters
-                if (fileName.contains("?")) {
-                    fileName = fileName.substring(0, fileName.indexOf('?'));
-                }
-                File outputFile = new File(outputDirectory, fileName);
-                
-                // Skip if file already exists
-                if (outputFile.exists()) {
-                    log.debug("File already exists, skipping: {}", fileName);
-                    continue;
-                }
-                
-                writeToFile(fileContents, outputFile);
-            } catch (Exception e) {
-                log.error("Error downloading file from URL {}: {}", url, e.getMessage(), e);
-            }
+        if (urls.isEmpty()) {
+            log.warn("No files to download");
+            return;
         }
         
-        log.info("Download completed. Files saved to: {}", outputDirectory.getAbsolutePath());
+        AtomicInteger successCount = new AtomicInteger(0);
+        AtomicInteger errorCount = new AtomicInteger(0);
+        AtomicInteger skippedCount = new AtomicInteger(0);
+        
+        // Create parallel download tasks using the configured downloadTaskExecutor
+        // This ensures the thread pool size, max pool size, and queue capacity settings are respected
+        List<CompletableFuture<Void>> downloadTasks = urls.stream()
+                .map(url -> CompletableFuture.runAsync(() -> {
+                    try {
+                        downloadSingleFile(url, outputDirectory, successCount, errorCount, skippedCount);
+                    } catch (Exception e) {
+                        errorCount.incrementAndGet();
+                        log.error("Error downloading file from URL {}: {}", url, e.getMessage(), e);
+                    }
+                }, downloadTaskExecutor))
+                .collect(Collectors.toList());
+        
+        // Wait for all downloads to complete
+        CompletableFuture.allOf(downloadTasks.toArray(new CompletableFuture[0])).join();
+        
+        log.info("Download completed. Success: {}, Errors: {}, Skipped: {}, Total: {}", 
+                successCount.get(), errorCount.get(), skippedCount.get(), urls.size());
+    }
+    
+    /**
+     * Downloads a single file from the given URL.
+     * 
+     * @param url URL to download from
+     * @param outputDirectory Directory to save the file
+     * @param successCount Counter for successful downloads
+     * @param errorCount Counter for failed downloads
+     * @param skippedCount Counter for skipped downloads (already exists)
+     */
+    private void downloadSingleFile(String url, File outputDirectory, 
+                                   AtomicInteger successCount, 
+                                   AtomicInteger errorCount, 
+                                   AtomicInteger skippedCount) {
+        try {
+            Response response = given().when().get(url);
+            
+            // Check HTTP status code before processing
+            int statusCode = response.getStatusCode();
+            if (statusCode < 200 || statusCode >= 300) {
+                log.warn("HTTP error {} when downloading file from URL: {}. Skipping.", statusCode, url);
+                errorCount.incrementAndGet();
+                return;
+            }
+            
+            byte[] fileContents = response.asByteArray();
+            String fileName = url.substring(url.lastIndexOf('/') + 1);
+            // Clean filename from query parameters
+            if (fileName.contains("?")) {
+                fileName = fileName.substring(0, fileName.indexOf('?'));
+            }
+            File outputFile = new File(outputDirectory, fileName);
+            
+            // Skip if file already exists
+            if (outputFile.exists()) {
+                log.debug("File already exists, skipping: {}", fileName);
+                skippedCount.incrementAndGet();
+                return;
+            }
+            
+            writeToFile(fileContents, outputFile);
+            successCount.incrementAndGet();
+            log.debug("Successfully downloaded: {}", fileName);
+        } catch (Exception e) {
+            errorCount.incrementAndGet();
+            log.error("Error downloading file from URL {}: {}", url, e.getMessage(), e);
+        }
     }
 }

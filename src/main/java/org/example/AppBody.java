@@ -5,6 +5,8 @@ import dataProcessors.DatasetDownloader;
 import lombok.extern.slf4j.Slf4j;
 import model.Dataset;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import repository.DatasetRepository;
@@ -12,6 +14,7 @@ import repository.DatasetRepository;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Service
@@ -26,7 +29,9 @@ public class AppBody {
     private final DataParser dataParser;
     
     // Self-injection to ensure Spring AOP proxy is used for @Transactional methods
+    // @Lazy breaks the circular dependency cycle
     @Autowired
+    @Lazy
     private AppBody self;
 
     @Autowired
@@ -36,11 +41,33 @@ public class AppBody {
     }
 
     /**
-     * Downloads datasets from open.canada.ca and processes them.
+     * Downloads datasets from open.canada.ca and processes them asynchronously.
      * Note: This method is NOT transactional because it performs file I/O operations
      * (network downloads and file writes) which should not hold database connections.
      * Only processAndSaveDatasets() handles database transactions.
      * Uses self-injection to ensure @Transactional annotation is properly applied via Spring AOP proxy.
+     * 
+     * @return CompletableFuture that completes when download and processing are finished
+     */
+    @Async("downloadTaskExecutor")
+    public CompletableFuture<Void> downloadDatasetsAsync() {
+        log.info("Starting async dataset download process...");
+        try {
+            datasetDownloader.downloadFiles(OUTPUT_DIRECTORY);
+            log.info("Download completed. Starting data processing...");
+            // Use self-injected proxy to ensure @Transactional is applied
+            self.processAndSaveDatasets();
+            log.info("Async dataset download and processing completed successfully");
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            log.error("Error during async dataset download", e);
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+    
+    /**
+     * Synchronous version for backward compatibility.
+     * Downloads datasets and waits for completion.
      */
     public void downloadDatasets() {
         log.info("Starting dataset download process...");

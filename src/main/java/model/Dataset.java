@@ -29,7 +29,7 @@ public class Dataset {
     @Column(nullable = false)
     private String stream;
 
-    @Column(nullable = false, length = 500)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String employer;
 
     @Column(length = 200)
@@ -41,7 +41,7 @@ public class Dataset {
     @Column(nullable = false, length = 10)
     private String nocCode;
 
-    @Column(length = 500)
+    @Column(columnDefinition = "TEXT")
     private String nocTitle;
 
     @Column(nullable = false)
@@ -56,6 +56,9 @@ public class Dataset {
 
     @Column(length = 50)
     private String sourceFile;
+
+    @Column(length = 500)
+    private String websiteUrl;
 
     public enum DecisionStatus {
         APPROVED, DENIED

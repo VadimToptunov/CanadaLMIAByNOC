@@ -12,6 +12,8 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.concurrent.CompletableFuture;
+
 import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -37,7 +39,8 @@ class AdminControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void testDownloadDatasets_Success() throws Exception {
-        doNothing().when(appBody).downloadDatasets();
+        // Mock the async method to return a completed future
+        when(appBody.downloadDatasetsAsync()).thenReturn(CompletableFuture.completedFuture(null));
 
         mockMvc.perform(post("/api/admin/download")
                         .with(httpBasic("admin", "admin"))
@@ -46,7 +49,7 @@ class AdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("Download started successfully"));
 
-        verify(appBody, times(1)).downloadDatasets();
+        verify(appBody, times(1)).downloadDatasetsAsync();
     }
 
     @Test
@@ -59,7 +62,9 @@ class AdminControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void testDownloadDatasets_Error() throws Exception {
-        doThrow(new RuntimeException("Download failed")).when(appBody).downloadDatasets();
+        // Mock the async method to throw an exception
+        when(appBody.downloadDatasetsAsync())
+                .thenThrow(new RuntimeException("Download failed"));
 
         mockMvc.perform(post("/api/admin/download")
                         .with(httpBasic("admin", "admin"))
@@ -67,7 +72,7 @@ class AdminControllerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.success").value(false));
 
-        verify(appBody, times(1)).downloadDatasets();
+        verify(appBody, times(1)).downloadDatasetsAsync();
     }
 
     @Test

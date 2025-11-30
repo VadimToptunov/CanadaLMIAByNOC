@@ -3,10 +3,16 @@ package config;
 import lombok.extern.slf4j.Slf4j;
 import org.example.AppBody;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
+import service.CompanyWebsiteService;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Configuration for scheduled data update tasks.
@@ -26,6 +32,21 @@ public class ScheduledTasksConfig {
     @Autowired
     private AppBody appBody;
 
+    @Autowired
+    private CompanyWebsiteService companyWebsiteService;
+
+    @Value("${app.website-url-update.batch-size:50}")
+    private int websiteUrlBatchSize;
+
+    // Flag to prevent concurrent execution of scheduled tasks
+    private volatile boolean isUpdateInProgress = false;
+    
+    // Flag to prevent concurrent execution of website URL update tasks
+    private volatile boolean isWebsiteUrlUpdateInProgress = false;
+
+    // Maximum timeout for data update task (24 hours - should be more than enough for monthly updates)
+    private static final long UPDATE_TIMEOUT_HOURS = 24;
+
     /**
      * Scheduled task to automatically download and process new LMIA datasets.
      * 
@@ -37,17 +58,57 @@ public class ScheduledTasksConfig {
      * 2. Processes and saves them to the database
      * 3. Skips duplicate records automatically
      * 4. Logs the results for monitoring
+     * 
+     * This method waits for the async operation to complete to prevent concurrent executions
+     * and ensure proper error handling.
      */
     @Scheduled(cron = "${app.data-update.cron:0 0 2 1 * *}")
     public void scheduledDataUpdate() {
+        // Prevent concurrent execution if previous task is still running
+        if (isUpdateInProgress) {
+            log.warn("Scheduled data update skipped: previous update is still in progress");
+            return;
+        }
+
         log.info("Starting scheduled data update task...");
+        isUpdateInProgress = true;
+
         try {
-            appBody.downloadDatasets();
-            long totalRecords = appBody.getTotalRecordsCount();
-            log.info("Scheduled data update completed successfully. Total records in database: {}", totalRecords);
+            // Start async download and wait for completion with timeout
+            CompletableFuture<Void> future = appBody.downloadDatasetsAsync()
+                    .thenRun(() -> {
+                        long totalRecords = appBody.getTotalRecordsCount();
+                        log.info("Scheduled data update completed successfully. Total records in database: {}", totalRecords);
+                    })
+                    .handle((result, ex) -> {
+                        if (ex != null) {
+                            log.error("Error during scheduled data update", ex);
+                            // Re-throw as RuntimeException to propagate the error
+                            // This ensures future.get() will throw an exception
+                            throw new RuntimeException("Scheduled data update failed", ex);
+                        }
+                        return result;
+                    });
+
+            // Wait for completion with timeout to prevent concurrent executions
+            // and ensure proper error propagation
+            try {
+                future.get(UPDATE_TIMEOUT_HOURS, TimeUnit.HOURS);
+                log.info("Scheduled data update task finished successfully");
+            } catch (TimeoutException e) {
+                log.error("Scheduled data update timed out after {} hours", UPDATE_TIMEOUT_HOURS);
+                // Cancel the future if possible
+                future.cancel(true);
+            } catch (Exception e) {
+                log.error("Error waiting for scheduled data update to complete", e);
+                // Exception is already logged, but we don't rethrow to prevent scheduler from stopping
+            }
         } catch (Exception e) {
-            log.error("Error during scheduled data update", e);
+            log.error("Error starting scheduled data update", e);
             // Don't throw exception to prevent scheduler from stopping
+        } finally {
+            // Always clear the flag, even if there was an error
+            isUpdateInProgress = false;
         }
     }
 
@@ -63,6 +124,40 @@ public class ScheduledTasksConfig {
         // This could check the latest decision_date in the database
         // and warn if it's older than expected
         // Implementation can be added if needed
+    }
+
+    /**
+     * Scheduled task to find and update website URLs for companies that don't have them.
+     * 
+     * This task runs periodically to populate missing website URLs by searching the web.
+     * It processes a limited number of companies per run to avoid rate limiting.
+     * 
+     * Default schedule: Every Sunday at 4:00 AM (after data updates)
+     * Can be overridden via app.website-url-update.cron property
+     * Can be enabled/disabled via app.website-url-update.enabled property
+     */
+    @Scheduled(cron = "${app.website-url-update.cron:0 0 4 * * SUN}")
+    @ConditionalOnProperty(name = "app.website-url-update.enabled", havingValue = "true", matchIfMissing = false)
+    public void scheduledWebsiteUrlUpdate() {
+        // Prevent concurrent execution if previous task is still running
+        if (isWebsiteUrlUpdateInProgress) {
+            log.warn("Scheduled website URL update skipped: previous update is still in progress");
+            return;
+        }
+
+        log.info("Starting scheduled website URL update task...");
+        isWebsiteUrlUpdateInProgress = true;
+
+        try {
+            int found = companyWebsiteService.findAndUpdateMissingUrls(websiteUrlBatchSize);
+            log.info("Scheduled website URL update completed. Found {} website URLs", found);
+        } catch (Exception e) {
+            log.error("Error during scheduled website URL update", e);
+            // Don't throw exception to prevent scheduler from stopping
+        } finally {
+            // Always clear the flag, even if there was an error
+            isWebsiteUrlUpdateInProgress = false;
+        }
     }
 }
 

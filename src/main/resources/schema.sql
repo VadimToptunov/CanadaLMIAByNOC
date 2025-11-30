@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS lmia_datasets (
     positions_approved INTEGER NOT NULL,
     status VARCHAR(20) NOT NULL,
     decision_date DATE NOT NULL,
-    source_file VARCHAR(50)
+    source_file VARCHAR(50),
+    website_url VARCHAR(500)
 );
 
 -- Создание индексов для оптимизации поиска

@@ -48,7 +48,7 @@ public class ExportService {
                         dataset.getNocCode(),
                         dataset.getNocTitle(),
                         dataset.getPositionsApproved(),
-                        dataset.getStatus(),
+                        dataset.getStatus().name(), // Use .name() to get string representation like "APPROVED" or "DENIED"
                         dataset.getDecisionDate(),
                         dataset.getSourceFile()
                 );
@@ -127,8 +127,10 @@ public class ExportService {
 
         while (hasMore) {
             Pageable pageable = PageRequest.of(page, pageSize);
+            // Convert enum to string for native query
+            String statusString = status != null ? status.name() : null;
             Page<Dataset> pageResult = datasetRepository.searchDatasets(
-                    employer, nocCode, province, status, null, null, pageable);
+                    employer, nocCode, province, statusString, null, null, pageable);
             
             allDatasets.addAll(pageResult.getContent());
             hasMore = pageResult.hasNext();

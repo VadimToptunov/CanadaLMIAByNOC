@@ -7,19 +7,23 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class DatasetDownloaderTest {
 
     private DatasetDownloader datasetDownloader;
+    private Executor mockExecutor;
 
     @TempDir
     Path tempDir;
 
     @BeforeEach
     void setUp() {
-        datasetDownloader = new DatasetDownloader();
+        // Create a simple executor for testing (runs tasks in the current thread)
+        mockExecutor = Runnable::run;
+        datasetDownloader = new DatasetDownloader(mockExecutor);
     }
 
     @Test

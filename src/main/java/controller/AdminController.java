@@ -46,14 +46,24 @@ public class AdminController {
     @PostMapping("/download")
     public ResponseEntity<ApiResponse<Object>> downloadDatasets() {
         try {
-            appBody.downloadDatasets();
+            // Start async download (non-blocking) and handle errors
+            appBody.downloadDatasetsAsync()
+                    .thenRun(() -> {
+                        log.info("Async dataset download and processing completed successfully");
+                    })
+                    .exceptionally(ex -> {
+                        log.error("Error during async dataset download and processing", ex);
+                        return null;
+                    });
+            
             Map<String, Object> data = new HashMap<>();
-            data.put("message", "Datasets download and processing started");
+            data.put("message", "Datasets download and processing started asynchronously");
+            data.put("status", "in_progress");
             return ResponseEntity.ok(ApiResponse.success("Download started successfully", data));
         } catch (Exception e) {
-            log.error("Error downloading datasets", e);
+            log.error("Error starting dataset download", e);
             return ResponseEntity.internalServerError()
-                    .body(ApiResponse.error("Failed to download datasets: " + e.getMessage()));
+                    .body(ApiResponse.error("Failed to start download: " + e.getMessage()));
         }
     }
 

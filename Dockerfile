@@ -1,5 +1,5 @@
 # Multi-stage build for Spring Boot application
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM --platform=linux/arm64 maven:3.9-eclipse-temurin-17 AS build
 
 WORKDIR /app
 
@@ -12,15 +12,19 @@ COPY src ./src
 RUN mvn clean package -DskipTests
 
 # Runtime stage
-FROM eclipse-temurin:17-jre-alpine
+FROM --platform=linux/arm64 eclipse-temurin:17-jre
 
 WORKDIR /app
 
-# Install curl for health check
-RUN apk add --no-cache curl
+# Install curl for health check (Debian-based image)
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN addgroup -S spring && adduser -S spring -G spring
+RUN groupadd -r spring && useradd -r -g spring spring
+
+# Create directory for downloaded datasets and give ownership to spring user
+RUN mkdir -p /app/savedDatasets/NOCs && chown -R spring:spring /app
+
 USER spring:spring
 
 # Copy jar from build stage

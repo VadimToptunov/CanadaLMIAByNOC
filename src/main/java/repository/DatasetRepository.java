@@ -29,25 +29,34 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
     // Search by decision date
     Page<Dataset> findByDecisionDateBetween(LocalDate startDate, LocalDate endDate, Pageable pageable);
     
-    // Complex search
-    @Query("SELECT d FROM Dataset d WHERE " +
-           "(:employer IS NULL OR LOWER(d.employer) LIKE LOWER(CONCAT('%', :employer, '%'))) AND " +
-           "(:nocCode IS NULL OR d.nocCode = :nocCode) AND " +
-           "(:province IS NULL OR d.province = :province) AND " +
-           "(:status IS NULL OR d.status = :status) AND " +
-           "(:startDate IS NULL OR d.decisionDate >= :startDate) AND " +
-           "(:endDate IS NULL OR d.decisionDate <= :endDate)")
+    // Complex search - using native query to avoid PostgreSQL type inference issues with LOWER()
+    @Query(value = "SELECT * FROM lmia_datasets d WHERE " +
+           "(:employer IS NULL OR LOWER(CAST(d.employer AS TEXT)) LIKE LOWER('%' || CAST(:employer AS TEXT) || '%')) AND " +
+           "(:nocCode IS NULL OR d.noc_code = :nocCode) AND " +
+           "(:province IS NULL OR LOWER(CAST(d.province AS TEXT)) = LOWER(CAST(:province AS TEXT))) AND " +
+           "(:status IS NULL OR d.status = CAST(:status AS TEXT)) AND " +
+           "(:startDate IS NULL OR d.decision_date >= :startDate) AND " +
+           "(:endDate IS NULL OR d.decision_date <= :endDate)",
+           countQuery = "SELECT COUNT(*) FROM lmia_datasets d WHERE " +
+           "(:employer IS NULL OR LOWER(CAST(d.employer AS TEXT)) LIKE LOWER('%' || CAST(:employer AS TEXT) || '%')) AND " +
+           "(:nocCode IS NULL OR d.noc_code = :nocCode) AND " +
+           "(:province IS NULL OR LOWER(CAST(d.province AS TEXT)) = LOWER(CAST(:province AS TEXT))) AND " +
+           "(:status IS NULL OR d.status = CAST(:status AS TEXT)) AND " +
+           "(:startDate IS NULL OR d.decision_date >= :startDate) AND " +
+           "(:endDate IS NULL OR d.decision_date <= :endDate)",
+           nativeQuery = true)
     Page<Dataset> searchDatasets(
             @Param("employer") String employer,
             @Param("nocCode") String nocCode,
             @Param("province") String province,
-            @Param("status") Dataset.DecisionStatus status,
+            @Param("status") String status,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate,
             Pageable pageable);
     
-    // Statistics by company
-    @Query("SELECT COUNT(d) FROM Dataset d WHERE LOWER(d.employer) LIKE LOWER(CONCAT('%', :employer, '%'))")
+    // Statistics by company - using native query to avoid PostgreSQL type inference issues
+    @Query(value = "SELECT COUNT(*) FROM lmia_datasets d WHERE LOWER(CAST(d.employer AS TEXT)) LIKE LOWER('%' || CAST(:employer AS TEXT) || '%')",
+           nativeQuery = true)
     Long countByEmployer(@Param("employer") String employer);
     
     // Statistics by NOC
@@ -55,15 +64,40 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
     List<Object[]> getStatisticsByNoc(@Param("nocCode") String nocCode);
     
     // Check for exact duplicate by key fields (employer, NOC code, decision date, source file)
-    @Query("SELECT COUNT(d) > 0 FROM Dataset d WHERE " +
-           "LOWER(d.employer) = LOWER(:employer) AND " +
-           "d.nocCode = :nocCode AND " +
-           "d.decisionDate = :decisionDate AND " +
-           "((:sourceFile IS NULL AND d.sourceFile IS NULL) OR (:sourceFile IS NOT NULL AND d.sourceFile = :sourceFile))")
+    // Using native query to avoid PostgreSQL type inference issues with LOWER()
+    @Query(value = "SELECT COUNT(*) > 0 FROM lmia_datasets d WHERE " +
+           "LOWER(CAST(d.employer AS TEXT)) = LOWER(CAST(:employer AS TEXT)) AND " +
+           "d.noc_code = :nocCode AND " +
+           "d.decision_date = :decisionDate AND " +
+           "((:sourceFile IS NULL AND d.source_file IS NULL) OR (:sourceFile IS NOT NULL AND d.source_file = :sourceFile))",
+           nativeQuery = true)
     boolean existsByKeyFields(
             @Param("employer") String employer,
             @Param("nocCode") String nocCode,
             @Param("decisionDate") LocalDate decisionDate,
             @Param("sourceFile") String sourceFile);
+    
+    // Find distinct companies with their website URLs
+    // Returns companies that have a website URL set
+    @Query(value = "SELECT DISTINCT d.employer, d.website_url FROM lmia_datasets d " +
+           "WHERE d.website_url IS NOT NULL AND d.website_url != '' " +
+           "AND LOWER(CAST(d.employer AS TEXT)) = LOWER(CAST(:employer AS TEXT)) " +
+           "LIMIT 1",
+           nativeQuery = true)
+    List<Object[]> findCompanyWebsiteUrl(@Param("employer") String employer);
+    
+    // Find all records for a company that need website URL update
+    @Query(value = "SELECT * FROM lmia_datasets d WHERE " +
+           "LOWER(CAST(d.employer AS TEXT)) = LOWER(CAST(:employer AS TEXT)) AND " +
+           "(d.website_url IS NULL OR d.website_url = '' OR d.website_url LIKE 'https://www.google.com/search%')",
+           nativeQuery = true)
+    List<Dataset> findRecordsNeedingWebsiteUrl(@Param("employer") String employer);
+    
+    // Find distinct company names that need website URLs
+    @Query(value = "SELECT DISTINCT d.employer FROM lmia_datasets d WHERE " +
+           "(d.website_url IS NULL OR d.website_url = '' OR d.website_url LIKE 'https://www.google.com/search%') " +
+           "ORDER BY d.employer",
+           nativeQuery = true)
+    List<String> findCompaniesWithoutWebsiteUrl();
 }
 
