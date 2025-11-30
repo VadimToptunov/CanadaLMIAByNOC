@@ -58,27 +58,28 @@ public class DatasetDownloader {
         try {
             List<LinkedHashMap<String, Object>> listOfResults = response.jsonPath().get("result" + ".results[0].resources");
             log.debug(String.valueOf(listOfResults));
-        if (listOfResults != null) {
-            for (LinkedHashMap<String, Object> r : listOfResults) {
-                Object nameObj = r.get("name");
-                Object urlObj = r.get("url");
-                
-                // Null check for name and url fields
-                if (nameObj == null || urlObj == null) {
-                    log.debug("Skipping resource with missing name or url field");
-                    continue;
-                }
-                
-                String name = nameObj.toString();
-                String lcase = name.toLowerCase();
-                // Filter for English NOC positive datasets only
-                // The name already contains "en", so we don't need additional URL filtering
-                if (lcase.contains("national occupational classification (noc)") && 
-                    lcase.contains("positive") && 
-                    lcase.contains("en")) {
-                    log.debug(String.format("File name is : %s", name));
-                    String urlString = urlObj.toString();
-                    urls.add(urlString);
+            if (listOfResults != null) {
+                for (LinkedHashMap<String, Object> r : listOfResults) {
+                    Object nameObj = r.get("name");
+                    Object urlObj = r.get("url");
+                    
+                    // Null check for name and url fields
+                    if (nameObj == null || urlObj == null) {
+                        log.debug("Skipping resource with missing name or url field");
+                        continue;
+                    }
+                    
+                    String name = nameObj.toString();
+                    String lcase = name.toLowerCase();
+                    // Filter for English NOC positive datasets only
+                    // The name already contains "en", so we don't need additional URL filtering
+                    if (lcase.contains("national occupational classification (noc)") && 
+                        lcase.contains("positive") && 
+                        lcase.contains("en")) {
+                        log.debug(String.format("File name is : %s", name));
+                        String urlString = urlObj.toString();
+                        urls.add(urlString);
+                    }
                 }
             }
         } catch (Exception e) {
