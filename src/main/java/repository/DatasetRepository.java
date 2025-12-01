@@ -17,8 +17,27 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
     // Search by company name (partial match)
     Page<Dataset> findByEmployerContainingIgnoreCase(String employer, Pageable pageable);
     
-    // Search by NOC code
+    // Search by NOC code (exact match)
     Page<Dataset> findByNocCode(String nocCode, Pageable pageable);
+    
+    // Search by NOC code with cross-version support (NOC 2011 <-> NOC 2021)
+    // If searching for 4-digit code, also finds 5-digit codes starting with it
+    // If searching for 5-digit code, also finds 4-digit prefix
+    // Using WITH clause to compute nocCode length once to avoid parameter type inference issues
+    @Query(value = "WITH noc_params AS (SELECT CAST(:nocCode AS TEXT) AS noc_code_val, LENGTH(CAST(:nocCode AS TEXT)) AS noc_length) " +
+           "SELECT d.* FROM lmia_datasets d, noc_params np WHERE " +
+           "(:nocCode IS NULL OR " +
+           "d.noc_code = np.noc_code_val OR " +
+           "(np.noc_length = 4 AND d.noc_code LIKE np.noc_code_val || '%') OR " +
+           "(np.noc_length = 5 AND d.noc_code = LEFT(np.noc_code_val, 4)))",
+           countQuery = "WITH noc_params AS (SELECT CAST(:nocCode AS TEXT) AS noc_code_val, LENGTH(CAST(:nocCode AS TEXT)) AS noc_length) " +
+           "SELECT COUNT(*) FROM lmia_datasets d, noc_params np WHERE " +
+           "(:nocCode IS NULL OR " +
+           "d.noc_code = np.noc_code_val OR " +
+           "(np.noc_length = 4 AND d.noc_code LIKE np.noc_code_val || '%') OR " +
+           "(np.noc_length = 5 AND d.noc_code = LEFT(np.noc_code_val, 4)))",
+           nativeQuery = true)
+    Page<Dataset> findByNocCodeCrossVersion(@Param("nocCode") String nocCode, Pageable pageable);
     
     // Search by province
     Page<Dataset> findByProvince(String province, Pageable pageable);
@@ -30,20 +49,30 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
     Page<Dataset> findByDecisionDateBetween(LocalDate startDate, LocalDate endDate, Pageable pageable);
     
     // Complex search - using native query to avoid PostgreSQL type inference issues with LOWER()
-    @Query(value = "SELECT * FROM lmia_datasets d WHERE " +
+    // Includes cross-version NOC code matching (NOC 2011 <-> NOC 2021)
+    // Using WITH clause to compute nocCode length once to avoid parameter type inference issues
+    @Query(value = "WITH noc_params AS (SELECT CAST(:nocCode AS TEXT) AS noc_code_val, LENGTH(CAST(:nocCode AS TEXT)) AS noc_length) " +
+           "SELECT d.* FROM lmia_datasets d, noc_params np WHERE " +
            "(:employer IS NULL OR LOWER(CAST(d.employer AS TEXT)) LIKE LOWER('%' || CAST(:employer AS TEXT) || '%')) AND " +
-           "(:nocCode IS NULL OR d.noc_code = :nocCode) AND " +
+           "(:nocCode IS NULL OR " +
+           "d.noc_code = np.noc_code_val OR " +
+           "(np.noc_length = 4 AND d.noc_code LIKE np.noc_code_val || '%') OR " +
+           "(np.noc_length = 5 AND d.noc_code = LEFT(np.noc_code_val, 4))) AND " +
            "(:province IS NULL OR LOWER(CAST(d.province AS TEXT)) = LOWER(CAST(:province AS TEXT))) AND " +
            "(:status IS NULL OR d.status = CAST(:status AS TEXT)) AND " +
-           "(:startDate IS NULL OR d.decision_date >= :startDate) AND " +
-           "(:endDate IS NULL OR d.decision_date <= :endDate)",
-           countQuery = "SELECT COUNT(*) FROM lmia_datasets d WHERE " +
+           "(:startDate IS NULL OR d.decision_date >= CAST(:startDate AS DATE)) AND " +
+           "(:endDate IS NULL OR d.decision_date <= CAST(:endDate AS DATE))",
+           countQuery = "WITH noc_params AS (SELECT CAST(:nocCode AS TEXT) AS noc_code_val, LENGTH(CAST(:nocCode AS TEXT)) AS noc_length) " +
+           "SELECT COUNT(*) FROM lmia_datasets d, noc_params np WHERE " +
            "(:employer IS NULL OR LOWER(CAST(d.employer AS TEXT)) LIKE LOWER('%' || CAST(:employer AS TEXT) || '%')) AND " +
-           "(:nocCode IS NULL OR d.noc_code = :nocCode) AND " +
+           "(:nocCode IS NULL OR " +
+           "d.noc_code = np.noc_code_val OR " +
+           "(np.noc_length = 4 AND d.noc_code LIKE np.noc_code_val || '%') OR " +
+           "(np.noc_length = 5 AND d.noc_code = LEFT(np.noc_code_val, 4))) AND " +
            "(:province IS NULL OR LOWER(CAST(d.province AS TEXT)) = LOWER(CAST(:province AS TEXT))) AND " +
            "(:status IS NULL OR d.status = CAST(:status AS TEXT)) AND " +
-           "(:startDate IS NULL OR d.decision_date >= :startDate) AND " +
-           "(:endDate IS NULL OR d.decision_date <= :endDate)",
+           "(:startDate IS NULL OR d.decision_date >= CAST(:startDate AS DATE)) AND " +
+           "(:endDate IS NULL OR d.decision_date <= CAST(:endDate AS DATE))",
            nativeQuery = true)
     Page<Dataset> searchDatasets(
             @Param("employer") String employer,
@@ -59,9 +88,20 @@ public interface DatasetRepository extends JpaRepository<Dataset, Long> {
            nativeQuery = true)
     Long countByEmployer(@Param("employer") String employer);
     
-    // Statistics by NOC
+    // Statistics by NOC (exact match)
     @Query("SELECT d.nocCode, d.nocTitle, COUNT(d) as count FROM Dataset d WHERE d.nocCode = :nocCode GROUP BY d.nocCode, d.nocTitle")
     List<Object[]> getStatisticsByNoc(@Param("nocCode") String nocCode);
+    
+    // Statistics by NOC with cross-version support
+    // Using WITH clause to compute nocCode length once to avoid parameter type inference issues
+    @Query(value = "WITH noc_params AS (SELECT CAST(:nocCode AS TEXT) AS noc_code_val, LENGTH(CAST(:nocCode AS TEXT)) AS noc_length) " +
+           "SELECT d.noc_code, d.noc_title, COUNT(*) as count FROM lmia_datasets d, noc_params np WHERE " +
+           "(d.noc_code = np.noc_code_val OR " +
+           "(np.noc_length = 4 AND d.noc_code LIKE np.noc_code_val || '%') OR " +
+           "(np.noc_length = 5 AND d.noc_code = LEFT(np.noc_code_val, 4))) " +
+           "GROUP BY d.noc_code, d.noc_title",
+           nativeQuery = true)
+    List<Object[]> getStatisticsByNocCrossVersion(@Param("nocCode") String nocCode);
     
     // Check for exact duplicate by key fields (employer, NOC code, decision date, source file)
     // Using native query to avoid PostgreSQL type inference issues with LOWER()

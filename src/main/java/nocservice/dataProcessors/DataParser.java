@@ -86,6 +86,7 @@ public class DataParser {
             
             // Parse data rows
             String currentProvince = structure.provinceFromFile;
+            String currentStream = null; // Track current stream across rows
             
             for (int i = structure.headerRowIndex + 1; i < allLines.size(); i++) {
                 String line = allLines.get(i);
@@ -97,6 +98,7 @@ public class DataParser {
                 String detectedProvince = detectProvinceInLine(line);
                 if (detectedProvince != null) {
                     currentProvince = detectedProvince;
+                    currentStream = null; // Reset stream when province changes
                     log.debug("Found province section: {}", currentProvince);
                     continue;
                 }
@@ -125,8 +127,15 @@ public class DataParser {
                                 .build();
                         try (CSVParser rowParser = csvFormat.parse(new StringReader(line))) {
                             CSVRecord record = rowParser.iterator().next();
-                            Dataset dataset = parseRecord(record, structure.headers, sourceFileName, currentProvince);
+                            Dataset dataset = parseRecord(record, structure.headers, sourceFileName, currentProvince, currentStream);
                             if (dataset != null) {
+                                // Update current province and stream from parsed record for next rows
+                                if (dataset.getProvince() != null && !dataset.getProvince().equals("Unknown")) {
+                                    currentProvince = dataset.getProvince();
+                                }
+                                if (dataset.getStream() != null && !dataset.getStream().equals("Unknown")) {
+                                    currentStream = dataset.getStream();
+                                }
                                 datasets.add(dataset);
                             }
                         }
@@ -241,14 +250,86 @@ public class DataParser {
      * Maps province abbreviation to full name.
      */
     private String mapAbbreviationToProvince(String abbrev) {
+        if (abbrev == null || abbrev.trim().isEmpty()) {
+            return null;
+        }
         String[] abbrevs = {"NL", "ON", "QC", "BC", "AB", "MB", "SK", "NS", "NB", "PE", "YT", "NT", "NU"};
         String[] provinces = PROVINCES;
         for (int i = 0; i < abbrevs.length; i++) {
-            if (abbrevs[i].equalsIgnoreCase(abbrev)) {
+            if (abbrevs[i].equalsIgnoreCase(abbrev.trim())) {
                 return provinces[i];
             }
         }
         return abbrev;
+    }
+    
+    /**
+     * Normalizes province name to standard format.
+     */
+    private String normalizeProvince(String province) {
+        if (province == null || province.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = province.trim();
+        
+        // Check if it's already a standard province name
+        for (String standardProvince : PROVINCES) {
+            if (trimmed.equalsIgnoreCase(standardProvince)) {
+                return standardProvince;
+            }
+        }
+        
+        // Check if it's an abbreviation
+        String mapped = mapAbbreviationToProvince(trimmed);
+        if (mapped != null && !mapped.equals(trimmed)) {
+            return mapped;
+        }
+        
+        // Try partial matches for common variations
+        String lower = trimmed.toLowerCase();
+        if (lower.contains("newfoundland")) {
+            return "Newfoundland and Labrador";
+        } else if (lower.contains("prince edward")) {
+            return "Prince Edward Island";
+        } else if (lower.contains("northwest")) {
+            return "Northwest Territories";
+        } else if (lower.contains("british columbia") || lower.contains("bc")) {
+            return "British Columbia";
+        } else if (lower.contains("nova scotia") || lower.contains("ns")) {
+            return "Nova Scotia";
+        } else if (lower.contains("new brunswick") || lower.contains("nb")) {
+            return "New Brunswick";
+        }
+        
+        return trimmed; // Return as-is if no match found
+    }
+    
+    /**
+     * Normalizes stream name to standard format.
+     */
+    private String normalizeStream(String stream) {
+        if (stream == null || stream.trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = stream.trim();
+        String lower = trimmed.toLowerCase();
+        
+        // Normalize common stream variations
+        if (lower.contains("high wage") || lower.contains("high-wage")) {
+            return "High Wage";
+        } else if (lower.contains("low wage") || lower.contains("low-wage")) {
+            return "Low Wage";
+        } else if (lower.contains("primary agriculture") || lower.contains("agriculture")) {
+            return "Primary Agriculture";
+        } else if (lower.contains("permanent resident") || lower.contains("pr stream")) {
+            return "Permanent Resident Only";
+        } else if (lower.contains("global talent")) {
+            return "Global Talent Stream";
+        } else if (lower.contains("seasonal agricultural") || lower.contains("sawp")) {
+            return "Seasonal Agricultural Worker Program";
+        }
+        
+        return trimmed; // Return as-is if no match found
     }
     
     /**
@@ -311,16 +392,20 @@ public class DataParser {
         return datasets;
     }
 
-    private Dataset parseRecord(CSVRecord record, List<String> headers, String sourceFile, String provinceFromFile) {
-        String province = getValue(record, headers, "Province/Territory", "Province");
+    private Dataset parseRecord(CSVRecord record, List<String> headers, String sourceFile, String provinceFromFile, String streamFromPreviousRow) {
+        String province = getValue(record, headers, "Province/Territory", "Province", "Province/Territory");
         // Use province from file header if not found in record
         if ((province == null || province.trim().isEmpty()) && provinceFromFile != null) {
             province = provinceFromFile;
         }
         
-        String stream = getValue(record, headers, "Stream");
-        String employer = getValue(record, headers, "Employer");
-        String address = getValue(record, headers, "Address");
+        String stream = getValue(record, headers, "Stream", "Program Stream", "Stream Name");
+        // Use stream from previous row if current row has empty stream (for merged cells)
+        if ((stream == null || stream.trim().isEmpty()) && streamFromPreviousRow != null) {
+            stream = streamFromPreviousRow;
+        }
+        String employer = getValue(record, headers, "Employer", "Company Name", "Employer Name");
+        String address = getValue(record, headers, "Address", "Business Address", "Location");
         // Support NOC 2011 (4-digit), NOC 2021 (5-digit), and future NOC 2026 (5-digit)
         String nocInfo = getValue(record, headers, 
                 "Occupations under NOC 2011", "Occupations under NOC 2021", "Occupations under NOC 2026",
@@ -401,6 +486,12 @@ public class DataParser {
             province = provinceFromAddress;
         }
         
+        // Normalize province name
+        province = normalizeProvince(province);
+        
+        // Normalize stream name
+        stream = normalizeStream(stream);
+        
         // Parse number of positions
         Integer positions = parseInteger(positionsStr);
         if (positions == null || positions <= 0) {
@@ -417,8 +508,8 @@ public class DataParser {
                                        Dataset.DecisionStatus.APPROVED;
         
         Dataset dataset = new Dataset();
-        dataset.setProvince(province != null ? province.trim() : "Unknown");
-        dataset.setStream(stream != null ? stream.trim() : "Unknown");
+        dataset.setProvince(province != null && !province.trim().isEmpty() ? province.trim() : "Unknown");
+        dataset.setStream(stream != null && !stream.trim().isEmpty() ? stream.trim() : "Unknown");
         dataset.setEmployer(employer.trim());
         dataset.setCity(city);
         dataset.setPostalCode(postalCode);

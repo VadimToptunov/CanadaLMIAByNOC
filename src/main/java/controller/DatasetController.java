@@ -177,17 +177,20 @@ public class DatasetController {
 
     @Operation(
             summary = "Search by NOC code",
-            description = "Search for all LMIA records for a specific National Occupational Classification (NOC) code."
+            description = "Search for all LMIA records for a specific National Occupational Classification (NOC) code. " +
+                    "Supports both NOC 2011 (4-digit) and NOC 2021 (5-digit) codes. " +
+                    "Searching by 4-digit code will also find matching 5-digit codes, and vice versa."
     )
     @GetMapping("/noc/{nocCode}")
     public ResponseEntity<ApiResponse<PagedResponse<DatasetDTO>>> searchByNoc(
-            @Parameter(description = "NOC code (e.g., 0211)", required = true)
+            @Parameter(description = "NOC code (e.g., 0211 for NOC 2011 or 12104 for NOC 2021)", required = true)
             @PathVariable String nocCode,
             @RequestParam(defaultValue = "0") @Valid @Min(0) int page,
             @RequestParam(defaultValue = "20") @Valid @Min(1) int size) {
 
         Pageable pageable = PageRequest.of(page, size);
-        Page<Dataset> results = datasetRepository.findByNocCode(nocCode, pageable);
+        // Use cross-version search to find both old and new NOC codes
+        Page<Dataset> results = datasetRepository.findByNocCodeCrossVersion(nocCode, pageable);
 
         List<DatasetDTO> dtoList = results.getContent().stream()
                 .map(DatasetDTO::fromEntity)
@@ -211,7 +214,7 @@ public class DatasetController {
             description = "Returns overall statistics about LMIA datasets including total records, approved/denied counts, and approval rate. Results are cached for 30 minutes."
     )
     @GetMapping("/statistics")
-    @Cacheable(value = "statistics", unless = "#result == null")
+    @Cacheable(value = "statistics", unless = "#result == null || #result.data.totalRecords == 0")
     public ResponseEntity<ApiResponse<Object>> getStatistics() {
         long totalRecords = datasetRepository.count();
         long approvedCount = datasetRepository.findByStatus(Dataset.DecisionStatus.APPROVED, 
