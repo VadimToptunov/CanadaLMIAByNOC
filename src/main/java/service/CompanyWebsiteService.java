@@ -50,6 +50,30 @@ public class CompanyWebsiteService {
     }
 
     /**
+     * Gets existing website URL from database only (fast, no HTTP requests).
+     * Used during data loading to avoid blocking on web searches.
+     * 
+     * @param companyName Name of the company
+     * @return Website URL if found in database, null otherwise
+     */
+    public String getExistingWebsiteUrl(String companyName) {
+        if (companyName == null || companyName.trim().isEmpty()) {
+            return null;
+        }
+
+        String normalizedCompanyName = companyName.trim();
+        List<Object[]> existingUrls = datasetRepository.findCompanyWebsiteUrl(normalizedCompanyName);
+        if (!existingUrls.isEmpty() && existingUrls.get(0)[1] != null) {
+            String existingUrl = existingUrls.get(0)[1].toString();
+            // Skip Google search URLs - we want real websites
+            if (!existingUrl.contains("google.com/search")) {
+                return existingUrl;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Gets the website URL for a company, checking the database first.
      * If not found, attempts to find it via web search.
      * 

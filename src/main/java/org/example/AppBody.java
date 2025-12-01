@@ -123,7 +123,6 @@ public class AppBody {
         self.processAndSaveDatasets();
     }
 
-    @Transactional
     public void processAndSaveDatasets() {
         if (!OUTPUT_DIRECTORY.exists() || !OUTPUT_DIRECTORY.isDirectory()) {
             log.warn("Output directory does not exist: {}", OUTPUT_DIRECTORY.getAbsolutePath());
@@ -149,53 +148,21 @@ public class AppBody {
             }
 
             try {
-                List<Dataset> datasets = new ArrayList<>();
+                // Process and save each file in its own transaction
+                int fileSaved = self.processAndSaveFile(file);
+                totalSaved += fileSaved;
+                filesProcessed++;
                 
+                // Count total processed (including duplicates)
+                List<Dataset> datasets = new ArrayList<>();
                 String fileName = file.getName().toLowerCase();
                 if (fileName.endsWith(".csv")) {
                     datasets = dataParser.parseCsvFile(file);
                 } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
                     datasets = dataParser.parseExcelFile(file);
-                } else {
-                    log.debug("Skipping unsupported file type: {}", file.getName());
-                    continue;
                 }
-
-                if (datasets.isEmpty()) {
-                    log.debug("No records parsed from file: {}", file.getName());
-                    continue;
-                }
-
-                // Save to database, skipping duplicates (using batch insert for performance)
-                int fileSaved = 0;
-                List<Dataset> datasetsToSave = new ArrayList<>();
-                
-                for (Dataset dataset : datasets) {
-                    try {
-                        // Check for duplicates by key fields
-                        if (!isDuplicate(dataset)) {
-                            datasetsToSave.add(dataset);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Error checking duplicate for dataset from file {}: {}", file.getName(), e.getMessage());
-                    }
-                }
-                
-                // Batch save for better performance
-                if (!datasetsToSave.isEmpty()) {
-                    try {
-                        datasetRepository.saveAll(datasetsToSave);
-                        fileSaved = datasetsToSave.size();
-                        totalSaved += fileSaved;
-                    } catch (Exception e) {
-                        log.error("Error batch saving datasets from file {}: {}", file.getName(), e.getMessage(), e);
-                        filesWithErrors++;
-                        // Continue processing other files even if this one failed
-                    }
-                }
-
                 totalProcessed += datasets.size();
-                filesProcessed++;
+                
                 log.info("Processed file {}: {} records parsed, {} saved to database", file.getName(), datasets.size(), fileSaved);
 
             } catch (Exception e) {
@@ -207,6 +174,56 @@ public class AppBody {
 
         log.info("Processing completed. Files processed: {}, Files with errors: {}, Total records processed: {}, Total records saved: {}", 
                 filesProcessed, filesWithErrors, totalProcessed, totalSaved);
+    }
+    
+    @Transactional
+    public int processAndSaveFile(File file) {
+        try {
+            List<Dataset> datasets = new ArrayList<>();
+            
+            String fileName = file.getName().toLowerCase();
+            if (fileName.endsWith(".csv")) {
+                datasets = dataParser.parseCsvFile(file);
+            } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls")) {
+                datasets = dataParser.parseExcelFile(file);
+            } else {
+                log.debug("Skipping unsupported file type: {}", file.getName());
+                return 0;
+            }
+
+            if (datasets.isEmpty()) {
+                log.debug("No records parsed from file: {}", file.getName());
+                return 0;
+            }
+
+            // Save to database, skipping duplicates (using batch insert for performance)
+            List<Dataset> datasetsToSave = new ArrayList<>();
+            
+            for (Dataset dataset : datasets) {
+                try {
+                    // Check for duplicates by key fields
+                    if (!isDuplicate(dataset)) {
+                        datasetsToSave.add(dataset);
+                    }
+                } catch (Exception e) {
+                    log.warn("Error checking duplicate for dataset from file {}: {}", file.getName(), e.getMessage());
+                }
+            }
+            
+            // Batch save for better performance
+            if (!datasetsToSave.isEmpty()) {
+                datasetRepository.saveAll(datasetsToSave);
+                // Explicitly flush to ensure data is written to database
+                datasetRepository.flush();
+                log.debug("Successfully saved {} records from file {} to database", datasetsToSave.size(), file.getName());
+                return datasetsToSave.size();
+            }
+            
+            return 0;
+        } catch (Exception e) {
+            log.error("Error processing file {}: {}", file.getName(), e.getMessage(), e);
+            throw e; // Re-throw to trigger transaction rollback
+        }
     }
 
     private boolean isDuplicate(Dataset dataset) {

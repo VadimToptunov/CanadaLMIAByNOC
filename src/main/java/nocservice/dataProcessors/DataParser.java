@@ -646,7 +646,7 @@ public class DataParser {
         }
     }
 
-    LocalDate extractDateFromFileName(String fileName) {
+    public LocalDate extractDateFromFileName(String fileName) {
         // Try to extract date from filename
         // Formats: 2017q1q2, 2018q3, tfwp_2019q1, TFWP_2021Q2, 2022q1
         Pattern datePattern = Pattern.compile("(\\d{4})[qQ]([1-4])");
