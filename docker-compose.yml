@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -54,7 +54,7 @@ services:
       APP_DOWNLOAD_TOR_PROXY_HOST: "tor"
       APP_DOWNLOAD_TOR_PROXY_PORT: "9050"
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       postgres:
         condition: service_healthy

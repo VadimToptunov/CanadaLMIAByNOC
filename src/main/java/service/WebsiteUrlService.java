@@ -40,15 +40,17 @@ public class WebsiteUrlService {
             return null;
         }
 
-        // First, try to get a real website URL from the database or find it
-        String websiteUrl = companyWebsiteService.getOrFindCompanyWebsiteUrl(companyName, city, province);
+        // During initial data loading, skip expensive web searches
+        // Just check database for existing URLs and generate Google search URL as fallback
+        // Real website URLs will be found later by scheduled task
         
-        // If we found a real URL (not a Google search link), return it
-        if (websiteUrl != null && !websiteUrl.contains("google.com/search")) {
-            return websiteUrl;
+        // Quick check: try to get existing URL from database (fast, no HTTP requests)
+        String existingUrl = companyWebsiteService.getExistingWebsiteUrl(companyName);
+        if (existingUrl != null && !existingUrl.contains("google.com/search")) {
+            return existingUrl;
         }
 
-        // Fallback: Generate a Google search URL
+        // Fallback: Generate a Google search URL (fast, no HTTP requests)
         return generateCompanySearchUrl(companyName, city, province);
     }
 
